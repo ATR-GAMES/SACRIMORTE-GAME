@@ -1,11 +1,12 @@
 // Combat bench: the priest on a plain white floor against the demon's ten, with health, stamina, five weapons, the
 // roll, prayer and the crucifix, and a great deal of blood. Plus a gallery of every animation in all eight facings.
-import { ANIMS, bake, animsFor, animInfo, OX, OY } from './priest.js?v=fd604c0';
-import { WEAPONS, WEAPON_IDS } from './weapons.js?v=fd604c0';
-import { toScreen } from './raster.js?v=fd604c0';
-import { ENEMIES, ENEMY_IDS, ENEMY_ANIMS, bakeEnemy } from './enemies.js?v=fd604c0';
-import { Sheet } from './atlas.js?v=fd604c0';
-import { initTouch } from './touch.js?v=fd604c0';
+import { ANIMS, bake, animsFor, animInfo, OX, OY } from './priest.js?v=96ed7b9';
+import { WEAPONS, WEAPON_IDS } from './weapons.js?v=96ed7b9';
+import { toScreen } from './raster.js?v=96ed7b9';
+import { ENEMIES, ENEMY_IDS, ENEMY_ANIMS, bakeEnemy } from './enemies.js?v=96ed7b9';
+import { Sheet, loadPacked } from './atlas.js?v=96ed7b9';
+import { initTouch } from './touch.js?v=96ed7b9';
+import { MOBILE, PERF } from './device.js?v=96ed7b9';
 
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const hud = document.getElementById('hud'), load = document.getElementById('load'), deathEl = document.getElementById('death'), pauseEl = document.getElementById('pause');
@@ -43,26 +44,29 @@ const HP = 100, ST = 100, ROLL_COST = 26, CROSS_DRAIN = 20, ST_REGEN = 42, PRAY_
 
 // ---------------------------------------------------------------- sprites
 const SETS = {}, CLEAN = {}, ESETS = {}, progress = {};
+// Painting sprites is the heaviest thing the game does; it is done in slices of a few milliseconds so frames keep flowing.
+let sliceT = 0;
 const tick = () => new Promise(r => setTimeout(r, 0));
+const yieldIfLate = async () => { if (performance.now() - sliceT > PERF.bakeBudget) { await tick(); sliceT = performance.now(); } };
 async function bakeSet(wid) {
-  const key = wid || '', list = animsFor(wid), sh = new Sheet();
+  const key = wid || '', pre = await loadPacked('p-' + (key || 'mano'));
+  if (pre) { pre.gore = 0; progress[key] = 1; CLEAN[key] = pre; if (!SETS[key]) SETS[key] = pre; return; }
+  const list = animsFor(wid), sh = new Sheet();
   const total = list.reduce((s, a) => s + animInfo(a, wid).n * 8, 0); let done = 0;
   for (const a of list) {
     const n = animInfo(a, wid).n;
     for (let k = 0; k < 8; k++) {
-      for (let f = 0; f < n; f++) { sh.add(fkey(a, k, f), bake(a, f, k, wid, 0)); done++; }
-      progress[key] = done / total;
-      await tick();
+      for (let f = 0; f < n; f++) { sh.add(fkey(a, k, f), bake(a, f, k, wid, 0)); done++; progress[key] = done / total; await yieldIfLate(); }
     }
   }
   sh.gore = 0; CLEAN[key] = sh; if (!SETS[key]) SETS[key] = sh;
 }
 async function bakeEnemySet(id) {
+  const pre = await loadPacked('e-' + id);
+  if (pre) { progress['e:' + id] = 1; ESETS[id] = pre; return; }
   const E = ENEMIES[id], sh = new Sheet(), total = ENEMY_ANIMS.reduce((s, a) => s + E.anims[a].n * 8, 0); let done = 0;
   for (const a of ENEMY_ANIMS) for (let k = 0; k < 8; k++) {
-    for (let f = 0; f < E.anims[a].n; f++) { sh.add(fkey(a, k, f), bakeEnemy(id, a, f, k)); done++; }
-    progress['e:' + id] = done / total;
-    await tick();
+    for (let f = 0; f < E.anims[a].n; f++) { sh.add(fkey(a, k, f), bakeEnemy(id, a, f, k)); done++; progress['e:' + id] = done / total; await yieldIfLate(); }
   }
   ESETS[id] = sh;
 }
@@ -76,6 +80,8 @@ function nextRow(sh, lvl) {
   for (const dirs of [[pl.k], [0, 1, 2, 3, 4, 5, 6, 7]]) for (const a of order) if (sh.rows[a]) for (const d of dirs) if (sh.rows[a][d] !== lvl) return [a, d];
   return null;
 }
+// Repainting goes frame by frame inside a row, so no single game frame has to wait for a whole animation.
+let goreJob = null;
 function goreTick() {
   const key = pl.wid || '', lvl = goreLevel();
   let sh = SETS[key];
@@ -84,13 +90,13 @@ function goreTick() {
   if (!lvl) { if (CLEAN[key] && sh !== CLEAN[key]) SETS[key] = CLEAN[key]; return; }
   if (sh === CLEAN[key]) { sh = sh.clone(); sh.rows = {}; for (const a of animsFor(pl.wid)) sh.rows[a] = new Array(8).fill(0); SETS[key] = sh; }
   const t0 = performance.now();
-  let job;
-  while ((job = nextRow(sh, lvl)) && performance.now() - t0 < 6) {
-    const [a, k] = job, n = info(a).n;
-    for (let f = 0; f < n; f++) sh.put(fkey(a, k, f), bake(a, f, k, pl.wid, lvl));
-    sh.rows[a][k] = lvl;
-  }
-  goreBusy = !!nextRow(sh, lvl);
+  do {
+    if (!goreJob || goreJob.sh !== sh || goreJob.lvl !== lvl) { const r = nextRow(sh, lvl); if (!r) { goreJob = null; break; } goreJob = { sh, lvl, a: r[0], k: r[1], f: 0 }; }
+    const j = goreJob, n = info(j.a).n;
+    sh.put(fkey(j.a, j.k, j.f), bake(j.a, j.f, j.k, pl.wid, lvl));
+    if (++j.f >= n) { sh.rows[j.a][j.k] = lvl; goreJob = null; }
+  } while (performance.now() - t0 < PERF.goreBudget);
+  goreBusy = !!(goreJob || nextRow(sh, lvl));
 }
 // Everything not needed at boot is painted in the background; whatever is asked for jumps the queue.
 let want = null, wantE = null;
@@ -100,6 +106,8 @@ async function baker() {
     const need = pendingSpawn.find(id => !ESETS[id]) || (wantE && !ESETS[wantE] ? wantE : null);
     let i = need ? queue.findIndex(q => q[0] === 'e' && q[1] === need) : -1;
     if (i < 0 && want && !SETS[want]) i = queue.findIndex(q => q[0] === 'w' && q[1] === want);
+    // On a phone nothing is painted ahead of time: only what has been asked for.
+    if (i < 0 && !PERF.prefetch) { await new Promise(r => setTimeout(r, 120)); continue; }
     const [[t, id]] = queue.splice(Math.max(0, i), 1);
     if (t === 'w') await bakeSet(id); else await bakeEnemySet(id);
   }
@@ -330,9 +338,10 @@ function paintSplat(g, s) {
     g.fillStyle = BLOOD[2 + (R() < .4 ? 1 : 0)]; g.fillRect(Math.round(cx + ox), Math.round(cy + oy), 1, 1);
   }
 }
-function splat(s) { s.seed = s.seed || (Math.random() * 1e9 | 0) + 1; splats.push(s); if (splats.length > 5000) splats.shift(); paintSplat(floorCtx, s); }
+function splat(s) { s.seed = s.seed || (Math.random() * 1e9 | 0) + 1; splats.push(s); if (splats.length > PERF.splats) splats.shift(); paintSplat(floorCtx, s); }
 function resetFloor() { floor.width = view.w; floor.height = view.h; floorCtx = floor.getContext('2d'); for (const s of splats) paintSplat(floorCtx, s); }
 function bleed(x, y, z, dx, dy, n, power = 1) {
+  n = Math.round(n * PERF.blood);
   for (let i = 0; i < n; i++) {
     const a = Math.atan2(dy, dx) + rnd(-.9, .9) * (dx || dy ? 1 : 3.5), sp = rnd(20, 150) * power;
     drops.push({ x: x + rnd(-2, 2), y: y + rnd(-2, 2), z: z + rnd(-4, 4), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: rnd(10, 130) * power, sz: Math.random() < .25 ? 2 : 1 });
@@ -540,6 +549,8 @@ function shadow(x, y, rx, ry, a) {
   ctx.fillStyle = `rgba(20,16,24,${a})`;
   for (let j = -ry; j <= ry; j++) { const w = Math.round(rx * Math.sqrt(1 - (j / (ry + .5)) ** 2)); ctx.fillRect(Math.round(x - w), Math.round(y + j), w * 2, 1); }
 }
+// The same sprite added on top of itself: a white-hot flash, cheap everywhere.
+const glow = (fn, a) => { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a; fn(); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; };
 const drawS = (sh, a, k, f, x, y) => sh.draw(ctx, fkey(a, k, f), Math.round(x - OX), Math.round(y - OY));
 const bar = (x, y, w, h, v, fg, bg = '#2a2228') => { ctx.fillStyle = bg; ctx.fillRect(x, y, w, h); ctx.fillStyle = fg; ctx.fillRect(x, y, Math.round(w * Math.max(0, Math.min(1, v))), h); };
 
@@ -547,7 +558,14 @@ function drawPlay() {
   ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, view.w, view.h);
   const sk = shake > 0 ? 2 : 0, ox = view.w / 2 + (sk ? Math.round(rnd(-sk, sk)) : 0), oy = view.h / 2 + (sk ? Math.round(rnd(-sk, sk)) : 0);
   ctx.drawImage(floor, ox - view.w / 2, oy - view.h / 2);
-  for (const p of pools) if (p.t > 0 && !p.done) { ctx.save(); ctx.translate(ox - view.w / 2, oy - view.h / 2); paintSplat(ctx, { x: p.x, y: p.y, r: p.r, el: p.el, dx: p.dx, dy: p.dy, pool: 1, seed: p.seed }); ctx.restore(); }
+  for (const p of pools) if (p.t > 0 && !p.done) {
+    if (!p.cv || p.r - p.cr >= .8) {
+      const R = Math.ceil(p.r * (1 + p.el)) + 4; p.cv = p.cv || document.createElement('canvas'); p.cv.width = R * 2 + 1; p.cv.height = Math.ceil(R * 1.3) + 4;
+      p.cr = p.r; const [sx, sy] = toScreen(p.x, p.y, 0); p.ax = Math.round(view.w / 2 + sx) - R; p.ay = Math.round(view.h / 2 + sy) - Math.ceil(R * .65) - 2;
+      const g = p.cv.getContext('2d'); g.translate(-p.ax, -p.ay); paintSplat(g, { x: p.x, y: p.y, r: p.r, el: p.el, dx: p.dx, dy: p.dy, pool: 1, seed: p.seed });
+    }
+    ctx.drawImage(p.cv, p.ax + ox - view.w / 2, p.ay + oy - view.h / 2);
+  }
   for (const p of dust) { const [sx, sy] = toScreen(p.x, p.y, p.z), a = 1 - p.t / p.life; ctx.fillStyle = `rgba(120,112,108,${a * .55})`; ctx.fillRect(Math.round(ox + sx), Math.round(oy + sy), 2, 2); }
   // The crucifix's reach, a faint holy glare on the floor.
   if (pl.mode === 'cross' && pl.t * 8 >= 2) {
@@ -559,18 +577,18 @@ function drawPlay() {
   const lying = pl.anim === 'death' && frameOf() >= 7, f = pl.frame ?? frameOf();
   const list = [{ d: pl.x + pl.y, draw: () => {
     shadow(ox + gx, oy + gy, Math.max(6, (lying ? 20 : 12) - hz * .12), Math.max(2, 5 - hz * .05), Math.max(.08, .22 - hz * .004));
-    if (pl.flash > 0) ctx.filter = 'brightness(2.4)';
     drawS(SETS[pl.wid], pl.anim, pl.k, f, ox + gx, oy + gy - hz * Math.cos(Math.PI / 6));
-    ctx.filter = 'none'; ctx.globalAlpha = 1;
+    if (pl.flash > 0) glow(() => drawS(SETS[pl.wid], pl.anim, pl.k, f, ox + gx, oy + gy - hz * Math.cos(Math.PI / 6)), .75);
+    ctx.globalAlpha = 1;
   } }];
   for (const e of foes) list.push({ d: e.x + e.y - (!alive(e) && eDone(e) ? 40 : 0), draw: () => {
     const [sx, sy] = toScreen(e.x, e.y, 0), sc = ENEMIES[e.id].look.scale || 1;
     ctx.globalAlpha = e.dead > 28 ? Math.max(0, 1 - (e.dead - 28) / 2) : 1;
     shadow(ox + sx, oy + sy, Math.round(12 * sc), Math.max(2, Math.round(5 * sc)), .2);
-    if (e.flash > 0) ctx.filter = 'brightness(2.6)';
-    else if (e.cowed && ESTAT[e.id].demon) ctx.filter = 'sepia(1) saturate(4) hue-rotate(-20deg)';
     drawS(ESETS[e.id], e.anim, e.k, eFrame(e), ox + sx, oy + sy);
-    ctx.filter = 'none'; ctx.globalAlpha = 1;
+    if (e.flash > 0) glow(() => drawS(ESETS[e.id], e.anim, e.k, eFrame(e), ox + sx, oy + sy), .8);
+    else if (e.cowed && ESTAT[e.id].demon) glow(() => drawS(ESETS[e.id], e.anim, e.k, eFrame(e), ox + sx, oy + sy), .35 + .2 * Math.sin(performance.now() / 70));
+    ctx.globalAlpha = 1;
     if (alive(e) && e.barT > 0) bar(Math.round(ox + sx - 9), Math.round(oy + sy - 64 * sc), 18, 2, e.hp / ESTAT[e.id].hp, '#b8261c');
   } });
   list.sort((p, q) => p.d - q.d).forEach(o => o.draw());
@@ -589,16 +607,11 @@ function drawPlay() {
   // Health and stamina; red at the edges when he's close to the end.
   const low = 1 - pl.hp / HP;
   if (low > .55 && pl.mode !== 'dead') { const a = (low - .55) * (.9 + .3 * Math.sin(performance.now() / 160)); const g = ctx.createRadialGradient(view.w / 2, view.h / 2, view.h * .35, view.w / 2, view.h / 2, view.w * .7); g.addColorStop(0, 'rgba(120,0,0,0)'); g.addColorStop(1, `rgba(120,0,0,${a})`); ctx.fillStyle = g; ctx.fillRect(0, 0, view.w, view.h); }
-  const bx = 8, by = isTouch ? 8 : view.h - 16;
+  const bx = 8, by = MOBILE ? 8 : view.h - 16;
   if (pl.mode === 'dead') drawDeath(ox + gx, oy + gy);
   else { bar(bx, by, 90, 4, pl.hp / HP, '#b8261c'); bar(bx, by + 6, 90, 2, pl.st / ST, pl.tired > 0 ? '#e0a020' : '#8a8490'); }
-  hud.style.opacity = 0;
-  const aliveN = foes.filter(alive).length, nextE = ENEMIES[ENEMY_IDS[spawnIdx % ENEMY_IDS.length]].name;
-  hud.innerHTML = `arma: <b>${wname(pl.wid)}</b> · sangre: ${'▮'.repeat(goreLevel())}${'▯'.repeat(4 - goreLevel())}${pl.cleaning ? ' <i>(limpiándose…)</i>' : ''} · enemigos: ${aliveN}${pl.pending !== null && !SETS[pl.pending] ? ` · <i>afilando ${wname(pl.pending)}… ${Math.round((progress[pl.pending] || 0) * 100)}%</i>` : ''}${pendingSpawn.length ? ` · <i>invocando… ${Math.round((progress['e:' + pendingSpawn[0]] || 0) * 100)}%</i>` : ''}<br>
-WASD: caminar · Shift: correr · Q: rodar (esquiva) · Espacio: saltar · C: agacharse<br>
-1-5: arma (puñal, machete, hacha, candelabro, horca) · 0: sin arma · Clic: golpe (encadena 1→2→3) · J/K/L: golpe 1/2/3<br>
-R: rezar (cura, pero quedas expuesto) · F (mantener): crucifijo (repele y quema a los demoníacos) · T: levantarse<br>
-N: invocar enemigo (siguiente: <b>${nextE}</b>) · B: horda de 6 · M: limpiar todo · Tab: galería`;
+  if (hud.style.opacity !== '0') hud.style.opacity = 0;
+  if (touch) touch.draw(ctx);
 }
 
 // Colour drains out of the world, the dark closes in on the body until only it and its blood are lit, and ash rises.
@@ -702,6 +715,7 @@ function drawGallery(dt) {
   const n = A.n, fw = Math.min(cw, Math.floor(view.w / n), name === 'death' ? 80 : 60), fx0 = Math.floor((view.w - fw * n) / 2) + fw / 2;
   for (let i = 0; i < n; i++) { const x = fx0 + i * fw, y = 255; shadow(x, y, 11, 4, .12); drawS(sh, name, 1, i, x, y); ctx.fillStyle = '#b0a8ae'; ctx.fillText(i + 1, x, y + 14); }
   ctx.textAlign = 'left';
+  if (touch) touch.draw(ctx);
   const an = eid ? ENAMES[name] : nameOf(name, gWid);
   hud.innerHTML = `<b>galería</b> · <b>${who}</b> (${gWho + 1}/${whoN}) · ${an} (${gIdx + 1}/${names.length}) · ${n} cuadros × 8 direcciones<br>↑ / ↓: cambiar personaje · ← / →: cambiar animación${eid ? '' : ' · 1-5 / 0: arma del padre'} · Tab: volver a jugar`;
 }
@@ -730,13 +744,13 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-const isTouch = initTouch({ keys, hit, weapons: ['', ...WEAPON_IDS], weaponName: wname,
-  state: () => ({ mode: pl.mode, wid: pl.pending ?? pl.wid, paused, gallery }) });
+const touch = MOBILE ? initTouch({ keys, hit, view, weapons: ['', ...WEAPON_IDS],
+  state: () => ({ mode: pl.mode, wid: pl.pending ?? pl.wid, st: pl.st, paused, gallery }) }) : null;
 resize();
 await bakeSet('');
 load.remove();
-const mem = () => { const sets = new Set([...Object.values(SETS), ...Object.values(CLEAN), ...Object.values(ESETS)]); let b = 0; for (const s of sets) b += s.bytes; return Math.round(b / 1048576) + ' MB'; };
-window.__S = { setPause, hurtPriest, goreLevel, pl, SETS, ESETS, foes, progress, ANIMS, mem, spawn: id => { wantE = id; pendingSpawn.push(id); },
+const mem = () => { /* atlas pages, painted or downloaded */ const sets = new Set([...Object.values(SETS), ...Object.values(CLEAN), ...Object.values(ESETS)]); let b = 0; for (const s of sets) b += s.bytes; return Math.round(b / 1048576) + ' MB'; };
+window.__S = { MOBILE, setPause, hurtPriest, goreLevel, pl, SETS, ESETS, foes, progress, ANIMS, mem, spawn: id => { wantE = id; pendingSpawn.push(id); },
   setGallery: (on, i = 0, w = '', who = 0) => { gallery = on; gIdx = i; gWid = w; gWho = who; want = w || want; wantE = who ? ENEMY_IDS[who - 1] : wantE; gT = 0; resize(); } };
 requestAnimationFrame(frame);
 baker();

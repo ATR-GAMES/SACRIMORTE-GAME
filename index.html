@@ -55,37 +55,9 @@
   #pause .p-keys b { color: #d8b090; font-weight: normal; text-align: right; white-space: nowrap; }
   #pause .p-keys span { color: #a89880; }
   #pause .p-hint { margin-top: 22px; font-size: 13px; color: #5e5246; letter-spacing: .1em; }
-  /* phone controls */
+  /* phones */
   body.touch { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-  body.touch #hud { display: none; }
-  #touch { position: fixed; inset: 0; pointer-events: none; font-family: 'Pixelify Sans', monospace; -webkit-font-smoothing: none; font-variant-ligatures: none; }
-  #touch > * { pointer-events: auto; }
-  #touch:not([data-mode="play"]) > :not(.t-gal), #touch:not([data-mode="gallery"]) .t-gal { display: none; }
-  #touch[data-mode="paused"] .t-gal, #touch[data-mode="dead"] .t-gal { display: none; }
-  .t-zone { position: absolute; left: 0; top: 0; bottom: 0; width: 46%; }
-  .t-base { position: absolute; width: 0; height: 0; display: none; pointer-events: none; }
-  .t-base.on { display: block; }
-  .t-base::before { content: ''; position: absolute; left: -64px; top: -64px; width: 128px; height: 128px; border-radius: 50%;
-    background: rgba(20, 8, 10, .28); border: 3px solid rgba(120, 20, 16, .55); box-shadow: inset 0 0 0 3px rgba(0, 0, 0, .25); }
-  .t-knob { position: absolute; left: -26px; top: -26px; width: 52px; height: 52px; border-radius: 50%; background: rgba(150, 24, 18, .7);
-    border: 3px solid rgba(30, 4, 6, .8); box-shadow: inset -4px -4px 0 rgba(0, 0, 0, .3), inset 3px 3px 0 rgba(255, 140, 120, .25); }
-  .t-btn { position: absolute; display: grid; place-items: center; text-align: center; color: #eadcc4; font-size: 13px; letter-spacing: .06em; text-transform: uppercase;
-    background: rgba(26, 10, 12, .55); border: 3px solid rgba(110, 22, 16, .75); border-radius: 50%; text-shadow: 2px 2px 0 #000;
-    box-shadow: inset -4px -4px 0 rgba(0, 0, 0, .35), inset 3px 3px 0 rgba(255, 255, 255, .06); line-height: 1; }
-  .t-btn.down { background: rgba(150, 24, 18, .75); transform: translateY(2px); }
-  .t-atk { right: calc(26px + env(safe-area-inset-right)); bottom: 26px; width: 92px; height: 92px; font-size: 16px; }
-  .t-roll { right: calc(130px + env(safe-area-inset-right)); bottom: 20px; width: 64px; height: 64px; }
-  .t-jump { right: calc(40px + env(safe-area-inset-right)); bottom: 130px; width: 64px; height: 64px; }
-  .t-cross { right: calc(122px + env(safe-area-inset-right)); bottom: 98px; width: 58px; height: 58px; font-size: 26px; }
-  .t-pray { right: calc(196px + env(safe-area-inset-right)); bottom: 70px; width: 52px; height: 52px; font-size: 11px; }
-  .t-crouch { right: calc(200px + env(safe-area-inset-right)); bottom: 12px; width: 46px; height: 46px; font-size: 10px; }
-  #touch:not(.armed) .t-atk { opacity: .35; }
-  .t-pause { right: calc(14px + env(safe-area-inset-right)); top: 12px; width: 44px; height: 44px; border-radius: 6px; font-size: 16px; letter-spacing: 0; }
-  .t-wpn { right: calc(68px + env(safe-area-inset-right)); top: 12px; height: 44px; width: auto; min-width: 96px; padding: 0 12px; border-radius: 6px; font-size: 13px; gap: 1px; }
-  .t-wpn small { font-size: 9px; color: #8a7a68; }
-  .t-gal { position: absolute; left: 0; right: 0; bottom: 14px; display: flex; justify-content: center; gap: 12px; }
-  .t-gal .t-btn { position: static; width: 54px; height: 44px; border-radius: 6px; font-size: 16px; }
-  .t-gal .t-btn:last-child { width: 80px; font-size: 13px; }
+  body.touch #hud { font-size: 10px; }
   #rotate { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: #0c0406;
     color: #a3150f; font-family: 'Jacquard 24', monospace; font-size: 54px; text-align: center; z-index: 9; }
   #rotate small { font-family: 'Pixelify Sans', monospace; font-size: 14px; color: #8a7a68; }
@@ -100,6 +72,6 @@
 <div id="death"></div>
 <div id="pause"></div>
 <div id="load">pintando al padre…</div>
-<script type="module" src="src/main.js?v=fd604c0"></script>
+<script type="module" src="src/main.js?v=96ed7b9"></script>
 </body>
 </html>

@@ -35,4 +35,23 @@ export class Sheet {
     return o;
   }
   get bytes() { return this.pages.length * this.P * this.P * 4; }
+  // An atlas painted at build time (tools/prebake.mjs): pages are plain images until something needs to paint on them.
+  static fromPacked(j, imgs) {
+    const o = new Sheet(j.P); o.pages = imgs; o.cur = null;
+    for (const k in j.frames) { const f = j.frames[k]; o.frames.set(k, f && { c: imgs[f[0]], x: f[1], y: f[2], w: f[3], h: f[4], bx: f[5], by: f[6] }); }
+    return o;
+  }
+}
+// Loads sprites/<name>.json and its pages if the build shipped them; null otherwise (then they get painted here).
+const VQ = new URL(import.meta.url).search;
+export async function loadPacked(name) {
+  try {
+    const base = new URL('../sprites/', import.meta.url), r = await fetch(new URL(name + '.json' + VQ, base));
+    if (!r.ok) return null;
+    const j = await r.json();
+    const imgs = await Promise.all(Array.from({ length: j.pages }, (_, i) => new Promise((res, rej) => {
+      const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = new URL(`${name}-${i}.png${VQ}`, base).href;
+    })));
+    return Sheet.fromPacked(j, imgs);
+  } catch { return null; }
 }
