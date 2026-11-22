@@ -35,6 +35,7 @@ export const RAMPS = {
   mud:     [0x18130e, 0x2a2118, 0x3c3022, 0x50402e, 0x64523a],
   bandage: [0x3a3029, 0x675a4a, 0x958774, 0xbbae98, 0xd4c8b0],
   blood:   [0x260506, 0x4a0a0b, 0x741210, 0x9a1c16, 0xbe2a1e],
+  gore:    [0x2e0405, 0x520809, 0x780f0d, 0x9c1a13, 0xbc261a],
   eye:     [0x6e6656, 0x9a9078, 0xc0b796, 0xdcd3b2, 0xf0ead2],
   button:  [0x050406, 0x0e0c11, 0x2c2834, 0x4c4658, 0x6e667a],
   steel:   [0x22262c, 0x454b54, 0x6e757e, 0x9aa1a8, 0xcfd4d8],
@@ -45,33 +46,51 @@ export const RAMPS = {
 };
 
 // ---------------------------------------------------------------- materials (q = hit point in the part's own unit frame)
+// How bloodied he is (0 clean .. 4 soaked). Stains are blotches fixed in each part's own coordinates, so they stay
+// put on the cloth through every frame and facing; a higher level only lets more of the same blotches through.
+let GORE = 0;
+const GORE_T = [0, .21, .34, .48, .64];
+const stain = (a, b, c, w = 1, cloth = true) => {
+  if (!GORE) return false;
+  const big = hash(((a + 3) * 2.3 | 0) + ((c + 3) * 2.3 | 0) * 13, ((b + 3) * 2.3 | 0) + 1);
+  const fine = hash(((a + 3) * 7 | 0) + ((c + 3) * 7 | 0) * 31, ((b + 3) * 7 | 0) + 5);
+  if (big * .7 + fine * .3 < GORE_T[GORE] * w) { M.key = cloth ? 'gore' : 'blood'; M.tone = (fine - .5) * .25; return true; }
+  return false;
+};
+const torsoMat = (q0, q1, q2) => { stain(q0, q1, q2, q0 > 0 ? 1.35 : .55); };
+const bootMat = (q0, q1, q2) => { stain(q0, q1, q2, 1.3); };
+const stoleMat = (q0, q1, q2, p) => { stain(q0 + (p.si || 0), q1, q2 + (p.si || 0) * .7, 1.2); };
+const handMat = (q0, q1, q2) => { stain(q0, q1, q2, 2.4, false); };
 const headMat = (q0, q1, q2) => {
   const a1 = abs(q1); M.tone = q2 > .3 ? -.12 : 0;
   if (q0 < .1 || q2 > .6 || (a1 > .7 && q2 > -.35)) { M.key = 'hair'; M.tone = (hash((q1 * 9) | 0, (q0 * 5) | 0) - .5) * .3; return; }
   if (q2 > .0 && q2 < .36 && a1 > .12 && a1 < .64) M.tone = -.26;          // sunken eye sockets
   else if (q2 < -.06 && q2 > -.55 && a1 > .4) M.tone = -.08;               // hollow cheeks
   else if (q2 > .4) M.tone = -.06;
+  if (q0 > .35 && q2 < .3) stain(q0 * 2, q1 * 2, q2 * 2, .75, false);   // spatter on the face
 };
 const jawMat = (q0, q1, q2, p, px, py) => {
   if (q2 < .25 && q0 > -.4 && ((px + py) & 1)) M.key = 'stub';
   if (q0 < -.2) M.key = 'hair';
+  else if (q0 > .2) stain(q0 * 2, q1 * 2, q2 * 2, .9, false);
 };
 const hairMat = (q0, q1) => { M.tone = (hash((q1 * 11) | 0, 2) - .5) * .32; };
 const hairClip = (q0, q1, q2) => q2 < -.45 && hash((q1 * 12 + 40) | 0, 5) < (-.45 - q2) * 2.2;
-const crownMat = (q0, q1, q2) => { if (q2 < -.3) M.key = 'hatband'; else if (q2 > .7) M.tone = -.04; };
+const crownMat = (q0, q1, q2) => { if (q2 < -.3) M.key = 'hatband'; else if (q2 > .7) M.tone = -.04; stain(q0, q1, q2, .45); };
 const brimMat = (q0, q1) => { const r = q0 * q0 + q1 * q1; if (r > .8) M.tone = (hash(((atan2(q1, q0) + 4) * 6) | 0, 1) - .55) * .25; };
 const brimClip = (q0, q1) => q0 * q0 + q1 * q1 > .78 && hash(((atan2(q1, q0) + 4) * 3.2) | 0, 7) > .82;
-const collarMat = (q0, q1, q2) => { if (q0 > .5 && abs(q1) < .5 && q2 > -.6) M.key = 'collar'; };
-const mantleMat = (q0, q1, q2) => { if (q2 < -.55) M.tone = -.08; };
+const collarMat = (q0, q1, q2) => { if (q0 > .5 && abs(q1) < .5 && q2 > -.6) { M.key = 'collar'; stain(q0 * 3, q1 * 3, q2 * 3, 1.6, false); } else stain(q0, q1, q2, 1); };
+const mantleMat = (q0, q1, q2) => { if (q2 < -.55) M.tone = -.08; stain(q0, q1, q2, q0 > 0 ? 1.2 : .5); };
 const skirtMat = (q0, q1, q2, p) => {
   const ang = atan2(q1, q0);
   M.tone = .1 * sin(ang * 7 + p.t * 4) * (.25 + p.t);
   if (p.t > .7 && hash(((ang + 4) * 5) | 0, p.idx) < (p.t - .7) * 4.2) M.key = 'mud';
+  stain(cos(ang) * 1.6, sin(ang) * 1.6, p.t * 2.6, (q1 > 0 ? 1.3 : .7) * (.55 + p.t * .8));   // front and hem take most
 };
 const hemClip = (q0, q1, q2) => q2 < .35 && hash(((atan2(q1, q0) + 4) * 7) | 0, 9) > .52;
-const cuffMat = (q0, q1, q2, p) => { if (p.t > .82) M.tone = -.1; };
-const bandMat = (q0, q1, q2) => { if (q0 > .45 && q2 > .35 && q1 > -.2) M.key = 'blood'; else if (q2 < -.4) M.tone = -.08; };
-const sleeveMat = (q0, q1, q2, p) => { if (p.t > .05 && p.t < .12) M.tone = -.08; };
+const cuffMat = (q0, q1, q2, p) => { if (p.t > .82) M.tone = -.1; stain(q0, q1, q2 + p.t * 3, 1.1 + p.t * .9); };
+const bandMat = (q0, q1, q2) => { if (q0 > .45 && q2 > .35 && q1 > -.2) M.key = 'blood'; else if (q2 < -.4) M.tone = -.08; stain(q0, q1, q2, 2.4, false); };
+const sleeveMat = (q0, q1, q2, p) => { if (p.t > .05 && p.t < .12) M.tone = -.08; stain(q0, q1, q2 + p.t * 3, .8); };
 
 // ---------------------------------------------------------------- the body
 const HIPW = 3.3, THIGH = 13.6, SHIN = 13.8, UARM = 9.8, FARM = 8.4;
@@ -108,9 +127,9 @@ export function build(P, facing) {
     const mid = lerp(L.K, L.A, .6);
     chain(L.H, L.K, 2.6, 2.1, 'pants');
     chain(L.K, mid, 2.1, 1.95, 'pants');
-    chain(mid, L.A, 2.05, 1.85, 'boot');
+    chain(mid, L.A, 2.05, 1.85, 'boot', bootMat);
     const fp = F[3] || 0, fx = nrm([cos(fp), s * .12, -sin(fp)]), fy = nrm(crs([0, 0, 1], fx)), fz = crs(fx, fy);
-    E(add(L.A, add(mul(fx, 1.7), mul(fz, -1.15))), [fx, fy, fz], [3.3, 1.7, 1.35], 'boot');
+    E(add(L.A, add(mul(fx, 1.7), mul(fz, -1.15))), [fx, fy, fz], [3.3, 1.7, 1.35], 'boot', bootMat);
   }
 
   // Cassock skirt: horizontal slices from the hips to the hem, each wide enough to hold both legs at that height.
@@ -137,8 +156,8 @@ export function build(P, facing) {
   const side = w => { const s = near(w); return s.c[1] + sqrt((s.ra * s.A[1]) ** 2 + (s.rb * s.B[1]) ** 2); };
 
   // Torso.
-  E(up([0, 0, 5]), AX(U), [3.9, 5.3, 5.4], 'cassock');
-  E(up([.3, 0, 12.6]), AX(U), [4.3, 6.0, 6.6], 'cassock');
+  E(up([0, 0, 5]), AX(U), [3.9, 5.3, 5.4], 'cassock', torsoMat);
+  E(up([.3, 0, 12.6]), AX(U), [4.3, 6.0, 6.6], 'cassock', torsoMat);
   E(up([-.2, 0, 16.0]), AX(U), [5.2, 7.9, 3.4], 'cassock', mantleMat);
   chain(up([.3, 0, 18]), up([.8, 0, 23.2]), 1.95, 1.8, 'skin');
   E(up([.5, 0, 19.6]), AX(U), [2.9, 3.0, 1.7], 'cassock', collarMat);
@@ -190,7 +209,7 @@ export function build(P, facing) {
     }
     chain(up(S0), up(El), 2.5, 2.15, 'cassock', sleeveMat);
     chain(up(El), up(Wr), 2.15, 2.5, 'cassock', cuffMat);
-    E(up(Hc), AX(v => U(v)), [1.95, 1.7, 2.05], s > 0 ? 'bandage' : 'skin', s > 0 ? bandMat : null);
+    E(up(Hc), AX(v => U(v)), [1.95, 1.7, 2.05], s > 0 ? 'bandage' : 'skin', s > 0 ? bandMat : handMat);
     hands[s] = up(Hc); fore[s] = U(d2);
   }
 
@@ -245,7 +264,7 @@ export function build(P, facing) {
     for (let i = 0; i + 1 < pts.length; i++) {
       const a = pts[i], b = pts[i + 1], dn = nrm(sub(b, a)), out = i < 1 ? nrm(U([-.3, s, .4])) : U([1, 0, 0]);
       const W = nrm(crs(dn, out)), T = crs(dn, W), tip = i >= pts.length - 3;
-      E(lerp(a, b, .5), [dn, W, T], [len(sub(b, a)) / 2 + .45, 1.35, .55], tip && i === pts.length - 2 ? 'gold' : 'stole', null, { noLine: true });
+      E(lerp(a, b, .5), [dn, W, T], [len(sub(b, a)) / 2 + .45, 1.35, .55], tip && i === pts.length - 2 ? 'gold' : 'stole', stoleMat, { noLine: true, si: i * .37 + s });
     }
     const cr = pts[pts.length - 4], fn = U([1, 0, 0]);
     for (const o of [[0, 0, 1.2], [0, 0, 0], [0, 0, -1.2], [0, 1.2, 0], [0, -1.2, 0]]) decals.push({ p: add(add(cr, o), [.5, 0, 0]), n: fn, key: 'gold', tone: 1, tol: 2.4, face: 0 });
@@ -365,6 +384,24 @@ export const ANIMS = {
     if (i < 3) return mixP(STAND, KNEEL, [.15, .55, 1][i]);
     const b = sin((i - 3) / 3 * TAU); return mixP(KNEEL, P_({ ...KNEEL, head: [.82, 0, 0], lean: .16 }), .5 + .5 * b);
   } },
+  // After the killing: wipes his face with the sleeve, wrings his hands, dries the palms down the cassock.
+  clean: { n: 12, fps: 6, loop: true, pose: i => {
+    const F = [
+      { lean: .15, head: [.25, 0, 0], armR: [.9, -.2, 1.6], armL: [.2, .12, .3] },
+      { lean: .18, head: [.38, .22, .15], armR: [1.3, -.45, 1.95], armL: [.2, .12, .3] },
+      { lean: .18, head: [.38, .1, .1], armR: [1.36, -.3, 2.02], armL: [.2, .12, .3] },
+      { lean: .18, head: [.36, -.06, .05], armR: [1.36, -.12, 2.06], armL: [.2, .12, .3] },
+      { lean: .18, head: [.38, .2, .12], armR: [1.3, -.42, 1.96], armL: [.2, .12, .3] },
+      { lean: .18, head: [.36, -.04, .05], armR: [1.36, -.14, 2.05], armL: [.2, .12, .3] },
+      { lean: .2, head: [.5, 0, 0], armL: [.55, -.32, 1.55], armR: [.6, -.32, 1.45] },
+      { lean: .2, head: [.5, 0, 0], armL: [.62, -.32, 1.42], armR: [.53, -.32, 1.58] },
+      { lean: .2, head: [.5, 0, 0], armL: [.55, -.32, 1.55], armR: [.6, -.32, 1.45] },
+      { lean: .24, head: [.42, 0, 0], armL: [.12, .3, .15], armR: [.28, .3, .28], pel: [0, 0, 29.4] },
+      { lean: .24, head: [.42, 0, 0], armL: [.28, .3, .28], armR: [.12, .3, .15], pel: [0, 0, 29.4] },
+      { lean: .22, head: [.4, 0, 0], armL: [.14, .3, .16], armR: [.26, .3, .26], pel: [0, 0, 29.6] },
+    ][i];
+    return P_(F);
+  } },
   hurt: { n: 4, fps: 11, loop: false, pose: i => [HURT, P_({ ...HURT, lean: -.48, pel: [-2.2, 0, 28.2], head: [-.6, .1, .15], footR: [-6.5, .3, 2.6, 0], drag: -3 }), mixP(HURT, STAND, .5), mixP(HURT, STAND, .85)][i] },
   death: { n: 10, fps: 8, loop: false, pose: i => {
     const fall = (t, extra) => P_({ ...KNEELDEAD, tumble: t, pivot: [2, 0, 2], ...extra });
@@ -386,13 +423,14 @@ export const ANIMS = {
 // ---------------------------------------------------------------- baking
 export const SW = 144, SH = 136, OX = 72, OY = 96;
 // Facing k (0..7) is the world angle k·45°. k=1 looks straight down the screen.
-export function bake(anim, frame, k, wid) {
+export function bake(anim, frame, k, wid, gore = 0) {
+  GORE = gore;
   const P = poseFor(anim, frame, wid), { prims, decals } = build(P, k * PI / 4);
   return renderSprite(prims, decals, RAMPS, SW, SH, OX, OY);
 }
 
 // ---------------------------------------------------------------- armed
-const CARRY = new Set(['idle', 'walk', 'run', 'crouch', 'cwalk', 'jump']), STOW = new Set(['pray', 'cross', 'interact']);
+const CARRY = new Set(['idle', 'walk', 'run', 'crouch', 'cwalk', 'jump']), STOW = new Set(['pray', 'cross', 'interact', 'clean']);
 const lerpA = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
 export const animsFor = wid => wid ? [...Object.keys(ANIMS), 'atk1', 'atk2', 'atk3'] : Object.keys(ANIMS);
 export const animInfo = (anim, wid) => anim.startsWith('atk') ? { n: 6, fps: WEAPONS[wid].fps, loop: false } : ANIMS[anim];
@@ -428,3 +466,4 @@ export function poseFor(anim, i, wid) {
   P.weapon = { id: wid };
   return P;
 }
+export { P_, mixP, gait, ik, legAt };
