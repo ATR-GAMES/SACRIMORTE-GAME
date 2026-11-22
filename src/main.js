@@ -5,6 +5,7 @@ import { WEAPONS, WEAPON_IDS } from './weapons.js';
 import { toScreen } from './raster.js';
 import { ENEMIES, ENEMY_IDS, ENEMY_ANIMS, bakeEnemy } from './enemies.js';
 import { Sheet } from './atlas.js';
+import { initTouch } from './touch.js';
 
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const hud = document.getElementById('hud'), load = document.getElementById('load'), deathEl = document.getElementById('death'), pauseEl = document.getElementById('pause');
@@ -113,7 +114,7 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());
-addEventListener('mousedown', e => { if (paused) return; hit.add('Mouse' + e.button); e.preventDefault(); });
+addEventListener('mousedown', e => { if (paused || performance.now() - (window.__lastTouch || -1e9) < 900) return; hit.add('Mouse' + e.button); e.preventDefault(); });
 addEventListener('contextmenu', e => e.preventDefault());
 const down = (...c) => c.some(k => keys.has(k)), pressed = c => hit.has(c);
 
@@ -588,7 +589,7 @@ function drawPlay() {
   // Health and stamina; red at the edges when he's close to the end.
   const low = 1 - pl.hp / HP;
   if (low > .55 && pl.mode !== 'dead') { const a = (low - .55) * (.9 + .3 * Math.sin(performance.now() / 160)); const g = ctx.createRadialGradient(view.w / 2, view.h / 2, view.h * .35, view.w / 2, view.h / 2, view.w * .7); g.addColorStop(0, 'rgba(120,0,0,0)'); g.addColorStop(1, `rgba(120,0,0,${a})`); ctx.fillStyle = g; ctx.fillRect(0, 0, view.w, view.h); }
-  const bx = 8, by = view.h - 16;
+  const bx = 8, by = isTouch ? 8 : view.h - 16;
   if (pl.mode === 'dead') drawDeath(ox + gx, oy + gy);
   else { bar(bx, by, 90, 4, pl.hp / HP, '#b8261c'); bar(bx, by + 6, 90, 2, pl.st / ST, pl.tired > 0 ? '#e0a020' : '#8a8490'); }
   hud.style.opacity = 0;
@@ -626,6 +627,8 @@ function updateAsh(dt) {
 // ---------------------------------------------------------------- pause
 let paused = false, pSel = 0, pPage = 'main';
 const P_ITEMS = [['Continuar', () => setPause(false)], ['Controles', () => { pPage = 'keys'; renderPause(); }],
+  ['Invocar enemigo', () => { const id = ENEMY_IDS[spawnIdx % ENEMY_IDS.length]; spawnIdx++; wantE = id; pendingSpawn.push(id); setPause(false); }],
+  ['Horda de seis', () => { for (let i = 0; i < 6; i++) pendingSpawn.push(ENEMY_IDS[Math.random() * ENEMY_IDS.length | 0]); setPause(false); }],
   ['Reiniciar combate', () => { restart(); setPause(false); }], ['Galería', () => { setPause(false); gallery = true; gT = 0; gWid = pl.wid; resize(); hud.style.opacity = 1; }]];
 const P_KEYS = [['WASD / flechas', 'caminar'], ['Shift', 'correr'], ['Q', 'rodar (esquiva, invulnerable)'], ['Espacio', 'saltar'], ['C', 'agacharse / levantarse'],
   ['1 – 5 · 0', 'puñal, machete, hacha, candelabro, horca · sin arma'], ['Clic', 'golpe (clic otra vez encadena 1 → 2 → 3)'], ['J / K / L', 'golpe 1 / 2 / 3'],
@@ -727,6 +730,8 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+const isTouch = initTouch({ keys, hit, weapons: ['', ...WEAPON_IDS], weaponName: wname,
+  state: () => ({ mode: pl.mode, wid: pl.pending ?? pl.wid, paused, gallery }) });
 resize();
 await bakeSet('');
 load.remove();
