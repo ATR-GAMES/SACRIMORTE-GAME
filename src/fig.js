@@ -1,8 +1,8 @@
 // Generic figure builder for the enemies. Same skeleton and renderer as the priest (IK legs, FK or IK arms, sliced
 // skirts), but everything he wears is described by a "look": skin, clothes, head (human, goat, imp), headgear
 // (hood, veil, capirote, mitre), and extras (wings, tail, horns, a cross nailed to the arms, brands on the chest).
-import { renderSprite, hash, M } from './raster.js';
-import { RAMPS, ik, legAt } from './priest.js';
+import { renderSprite, hash, M } from './raster.js?v=fd604c0';
+import { RAMPS, ik, legAt } from './priest.js?v=fd604c0';
 
 const { sin, cos, sqrt, PI, abs, max, min, atan2, hypot, ceil } = Math;
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];

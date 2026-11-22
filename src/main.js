@@ -1,11 +1,11 @@
 // Combat bench: the priest on a plain white floor against the demon's ten, with health, stamina, five weapons, the
 // roll, prayer and the crucifix, and a great deal of blood. Plus a gallery of every animation in all eight facings.
-import { ANIMS, bake, animsFor, animInfo, OX, OY } from './priest.js';
-import { WEAPONS, WEAPON_IDS } from './weapons.js';
-import { toScreen } from './raster.js';
-import { ENEMIES, ENEMY_IDS, ENEMY_ANIMS, bakeEnemy } from './enemies.js';
-import { Sheet } from './atlas.js';
-import { initTouch } from './touch.js';
+import { ANIMS, bake, animsFor, animInfo, OX, OY } from './priest.js?v=fd604c0';
+import { WEAPONS, WEAPON_IDS } from './weapons.js?v=fd604c0';
+import { toScreen } from './raster.js?v=fd604c0';
+import { ENEMIES, ENEMY_IDS, ENEMY_ANIMS, bakeEnemy } from './enemies.js?v=fd604c0';
+import { Sheet } from './atlas.js?v=fd604c0';
+import { initTouch } from './touch.js?v=fd604c0';
 
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const hud = document.getElementById('hud'), load = document.getElementById('load'), deathEl = document.getElementById('death'), pauseEl = document.getElementById('pause');

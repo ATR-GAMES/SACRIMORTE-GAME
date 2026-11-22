@@ -3,7 +3,7 @@
 // blows. Blow keyframes live in the upper-body frame (u forward, l left, w up, origin at the pelvis):
 //   h = right hand, d = where the weapon points, plus body: lean, twist (+ turns to his left), lunge 0..1, drop (pelvis).
 // Frame 3 is the hit; frames 3 and 4 draw a smear behind the blade.
-import { M, hash } from './raster.js';
+import { M, hash } from './raster.js?v=fd604c0';
 
 const steelMat = (q0, q1) => {
   if (q0 > .35 && hash((q0 * 5) | 0, (q1 * 3 + 9) | 0) > .72) M.key = 'blood';
