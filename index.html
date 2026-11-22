@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sacrimorte</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #fff; overflow: hidden; }
+  canvas { display: block; image-rendering: pixelated; }
+  #hud { position: fixed; left: 12px; top: 10px; font: 12px/1.5 ui-monospace, Consolas, monospace; color: #5a5258; pointer-events: none; }
+  #hud b { color: #1c1820; }
+  #load { position: fixed; inset: 0; display: grid; place-items: center; font: 14px ui-monospace, Consolas, monospace; color: #5a5258; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"></div>
+<div id="load">pintando al padre…</div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
