@@ -3,8 +3,8 @@
 // one bandaged, bloodied hand. He is built from ellipsoids on a small skeleton (IK legs, FK arms), posed per frame and
 // handed to the raster to become pixels. Every one of the eight facings is drawn for real (none mirrored), so the
 // bandaged hand and the rosary always stay on his left.
-import { renderSprite, hash, M } from './raster.js?v=96ed7b9';
-import { WEAPONS } from './weapons.js?v=96ed7b9';
+import { renderSprite, hash, M } from './raster.js?v=7fc74c5';
+import { WEAPONS } from './weapons.js?v=7fc74c5';
 
 const { sin, cos, sqrt, PI, abs, max, min, atan2, hypot, ceil } = Math;
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -339,19 +339,19 @@ const KNEELDEAD = P_({ pel: [-2, 0, 15.5], lean: .3, head: [.95, .2, .25], footL
 
 export const ANIMS = {
   idle: { n: 8, fps: 5, loop: true, pose: i => { const b = sin(i / 8 * TAU); return P_({ pel: [0, 0, 30.2 - .25 * (1 + b)], lean: .12 + .03 * b, head: [.06 - .03 * b, 0, 0], armL: [.06 + .02 * b, .11, .16], armR: [.04 - .02 * b, .11, .18], drag: .35 * b }); } },
-  walk: { n: 8, loop: true, stride: 7.5, stance: .5, pose: i => {
-    const p = i / 8, P = P_({ pel: [.3, 0, 29.2 + .9 * (1 - abs(cos(TAU * p)))], lean: .13, twist: .08 * cos(TAU * p), head: [.04, -.06 * cos(TAU * p), 0], drag: 1.3, flare: .4 });
+  walk: { n: 12, loop: true, stride: 7.5, stance: .5, pose: i => {
+    const p = i / 12, P = P_({ pel: [.3, 0, 29.2 + .9 * (1 - abs(cos(TAU * p)))], lean: .13, twist: .08 * cos(TAU * p), head: [.04, -.06 * cos(TAU * p), 0], drag: 1.3, flare: .4 });
     gait(P, p, 7.5, 3.4, .5);
     P.armL = [.05 - .42 * cos(TAU * p), .1, .22 + .15 * max(0, -cos(TAU * p))]; P.armR = [.05 + .42 * cos(TAU * p), .1, .22 + .15 * max(0, cos(TAU * p))];
     return P; } },
-  run: { n: 8, loop: true, stride: 11, stance: .4, pose: i => {
-    const p = i / 8, P = P_({ pel: [1.5, 0, 26.6 + 1.6 * (1 - abs(cos(TAU * p)))], lean: .38, twist: .14 * cos(TAU * p), head: [-.22, 0, 0], drag: 4.2, flare: 1.8, lift: 1.8 });
+  run: { n: 12, loop: true, stride: 11, stance: .4, pose: i => {
+    const p = i / 12, P = P_({ pel: [1.5, 0, 26.6 + 1.6 * (1 - abs(cos(TAU * p)))], lean: .38, twist: .14 * cos(TAU * p), head: [-.22, 0, 0], drag: 4.2, flare: 1.8, lift: 1.8 });
     gait(P, p, 11, 6.5, .4);
     P.armL = [.25 - .95 * cos(TAU * p), .14, 1.45]; P.armR = [.25 + .95 * cos(TAU * p), .14, 1.45];
     return P; } },
   crouch: { n: 4, fps: 4, loop: true, pose: i => { const b = sin(i / 4 * TAU); return P_({ pel: [-1, 0, 18 - .3 * b], lean: .55 + .03 * b, head: [-.4, 0, 0], footL: [3.8, .7, 2.6, 0], footR: [-2.6, .5, 2.6, .35], armL: [.6, .22, 1.0], armR: [.45, .22, .9], flare: 1.2, flareFwd: 1.5 }); } },
-  cwalk: { n: 8, loop: true, stride: 5, stance: .55, pose: i => {
-    const p = i / 8, P = P_({ pel: [0, 0, 17.6 + .6 * (1 - abs(cos(TAU * p)))], lean: .55, head: [-.4, 0, 0], drag: .8, flare: 1.2, flareFwd: 1 });
+  cwalk: { n: 12, loop: true, stride: 5, stance: .55, pose: i => {
+    const p = i / 12, P = P_({ pel: [0, 0, 17.6 + .6 * (1 - abs(cos(TAU * p)))], lean: .55, head: [-.4, 0, 0], drag: .8, flare: 1.2, flareFwd: 1 });
     gait(P, p, 5, 3, .55);
     P.footL[1] = .7; P.footR[1] = .7;
     P.armL = [.55 - .2 * cos(TAU * p), .22, 1.0]; P.armR = [.5 + .2 * cos(TAU * p), .22, .95];
@@ -361,7 +361,7 @@ export const ANIMS = {
     P_({ pel: [.5, 0, 31.5], lean: .08, head: [-.15, 0, 0], armL: [2.4, .3, .35], armR: [2.3, .3, .4], footL: [1.2, .3, 5.5, 1.1], footR: [-2, .3, 4.5, 1.0], lift: -1.5, drag: .5 }),
     P_({ pel: [0, 0, 30], lean: .1, head: [-.1, 0, 0], armL: [1.8, .45, .6], armR: [1.6, .45, .7], footL: [4, .3, 12, .4], footR: [-2.5, .3, 7, .8], lift: -.5, flare: .8 }),
     P_({ pel: [0, 0, 29.5], lean: .18, head: [0, 0, 0], armL: [1.3, .65, .8], armR: [1.2, .65, .9], footL: [5, .4, 14, .2], footR: [1, .4, 11, .5], lift: 1.5, flare: 1.8 }),
-    P_({ pel: [0, 0, 30], lean: .05, head: [.15, 0, 0], armL: [2.2, .8, .5], armR: [2.1, .8, .5], footL: [2, .4, 6, .3], footR: [-1, .4, 4.5, .4], lift: 4.5, flare: 3 }),
+    P_({ pel: [0, 0, 30], lean: .05, head: [.15, 0, 0], armL: [1.55, .75, .7], armR: [1.45, .75, .75], footL: [2, .4, 6, .3], footR: [-1, .4, 4.5, .4], lift: 4.5, flare: 3 }),
     P_({ pel: [-.5, 0, 20], lean: .5, head: [-.3, 0, 0], armL: [.9, .55, .7], armR: [.8, .55, .7], footL: [3, .6, 2.6, 0], footR: [-1.5, .6, 2.6, .2], lift: 1.2, flare: 2.2, flareFwd: 1.5 }),
   ][i] },
   roll: { n: 8, fps: 16, loop: false, pose: i => {

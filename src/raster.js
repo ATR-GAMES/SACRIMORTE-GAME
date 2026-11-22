@@ -4,10 +4,11 @@
 // artist would: coloured outline (sel-out), inner contour lines where a limb crosses the body, stray-pixel cleanup
 // and hand-placed decals (eyes, buttons, embroidery) that would be lost at this size if they were sampled.
 
-const S2 = Math.SQRT1_2, C30 = Math.cos(Math.PI / 6), S30 = .5;
-// Fixed isometric camera (2:1 dimetric). World: x to screen down-right, y to screen down-left, z up.
+import { K, V, toScreen } from './view.js?v=7fc74c5';
+// The camera (its angle lives in src/view.js). World: x to screen down-right, y to screen down-left, z up.
+const S2 = Math.SQRT1_2, C30 = V, S30 = K;
 export const CAM = { r: [S2, -S2, 0], u: [-S30 * S2, -S30 * S2, C30], t: [C30 * S2, C30 * S2, S30] };
-export const toScreen = (x, y, z) => [(x - y) * S2, (x + y) * S2 * S30 - z * C30];
+export { toScreen };
 
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };

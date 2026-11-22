@@ -55,6 +55,10 @@
   #pause .p-keys b { color: #d8b090; font-weight: normal; text-align: right; white-space: nowrap; }
   #pause .p-keys span { color: #a89880; }
   #pause .p-hint { margin-top: 22px; font-size: 13px; color: #5e5246; letter-spacing: .1em; }
+  /* the map */
+  #map { position: fixed; inset: 0; display: none; pointer-events: none; }
+  #map.on { display: block; animation: pfade .3s ease; }
+  #map canvas { display: block; }
   /* phones */
   body.touch { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   body.touch #hud { font-size: 10px; }
@@ -72,6 +76,6 @@
 <div id="death"></div>
 <div id="pause"></div>
 <div id="load">pintando al padre…</div>
-<script type="module" src="src/main.js?v=96ed7b9"></script>
+<script type="module" src="src/main.js?v=7fc74c5"></script>
 </body>
 </html>

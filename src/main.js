@@ -1,14 +1,36 @@
-// Combat bench: the priest on a plain white floor against the demon's ten, with health, stamina, five weapons, the
+// The priest in the Cathedral of Our Lady of the Souls (src/cathedral.js), against the demon's ten, with health, stamina, five weapons, the
 // roll, prayer and the crucifix, and a great deal of blood. Plus a gallery of every animation in all eight facings.
-import { ANIMS, bake, animsFor, animInfo, OX, OY } from './priest.js?v=96ed7b9';
-import { WEAPONS, WEAPON_IDS } from './weapons.js?v=96ed7b9';
-import { toScreen } from './raster.js?v=96ed7b9';
-import { ENEMIES, ENEMY_IDS, ENEMY_ANIMS, bakeEnemy } from './enemies.js?v=96ed7b9';
-import { Sheet, loadPacked } from './atlas.js?v=96ed7b9';
-import { initTouch } from './touch.js?v=96ed7b9';
-import { MOBILE, PERF } from './device.js?v=96ed7b9';
+import { ANIMS, bake, animsFor, animInfo, OX, OY } from './priest.js?v=7fc74c5';
+import { WEAPONS, WEAPON_IDS } from './weapons.js?v=7fc74c5';
+import { toScreen } from './raster.js?v=7fc74c5';
+import { ENEMIES, ENEMY_IDS, ENEMY_ANIMS, bakeEnemy } from './enemies.js?v=7fc74c5';
+import { Sheet, loadPacked } from './atlas.js?v=7fc74c5';
+import { initTouch } from './touch.js?v=7fc74c5';
+import { MOBILE, PERF } from './device.js?v=7fc74c5';
+import * as SFX from './sfx.js?v=7fc74c5';
+import { K as GK, V as GV } from './view.js?v=7fc74c5';
+import { build as buildCathedral } from './cathedral.js?v=7fc74c5';
+import { makeWorld } from './world.js?v=7fc74c5';
+import { createMap } from './map.js?v=7fc74c5';
+
+// The map, and what draws it and keeps everyone out of its walls.
+// Statues are the game's own figures carved in pale stone: a saint holding up the cross, a hooded virgin, a kneeling monk.
+const statues = [];
+function statue(kind) {
+  if (statues[kind]) return statues[kind];
+  const s = kind === 0 ? bake('cross', 2, 1, '') : kind === 1 ? bakeEnemy('acolito', 'idle', 0, 1) : bake('pray', 5, 1, '');
+  const src = new ImageData(new Uint8ClampedArray(s.d.buffer.slice(0)), s.w, s.h), d = src.data;
+  for (let i = 0; i < d.length; i += 4) { if (!d[i + 3]) continue; const t = Math.pow((d[i] * .3 + d[i + 1] * .59 + d[i + 2] * .11) / 255, .75);
+    d[i] = 64 + t * 156; d[i + 1] = 60 + t * 150; d[i + 2] = 60 + t * 144; }
+  const full = document.createElement('canvas'); full.width = s.w; full.height = s.h; full.getContext('2d').putImageData(src, 0, 0);
+  const c = document.createElement('canvas'); c.width = 40; c.height = 76; c.getContext('2d').drawImage(full, OX - 20, OY - 74, 40, 76, 0, 0, 40, 76);
+  return statues[kind] = c;
+}
+const MAP = buildCathedral(), WORLD = makeWorld(MAP, { statue, lowFx: MOBILE }), CHART = createMap(MAP, n => WORLD.doorOpen(n), (w, h) => WORLD.diorama(w, h));
 
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+// ?clip: for recording clips (tools/clips.mjs): no health, stamina or enemy bars on screen.
+const CLIP = new URLSearchParams(location.search).has('clip');
 const hud = document.getElementById('hud'), load = document.getElementById('load'), deathEl = document.getElementById('death'), pauseEl = document.getElementById('pause');
 const DIRS = ['SE', 'S', 'SO', 'O', 'NO', 'N', 'NE', 'E'];
 const NAMES = { idle: 'quieto', walk: 'caminar', run: 'correr', crouch: 'agachado', cwalk: 'agachado andando', jump: 'salto', roll: 'rodar',
@@ -127,8 +149,8 @@ addEventListener('contextmenu', e => e.preventDefault());
 const down = (...c) => c.some(k => keys.has(k)), pressed = c => hit.has(c);
 
 // ---------------------------------------------------------------- the priest
-const WALK = 40, RUN = 86, CROUCH = 21, ROLL = 200, JUMPV = 150, G = 520;
-const pl = { x: 0, y: 0, z: 0, vz: 0, k: 1, mode: 'ground', anim: 'idle', t: 0, timer: 0, vx: 0, vy: 0, kx: 0, ky: 0, crouch: false, wid: '', pending: null,
+const WALK = 52, RUN = 118, CROUCH = 24, ROLL = 200, JUMPV = 235, G = 1150;
+const pl = { x: MAP.start[0], y: MAP.start[1], z: 0, vz: 0, k: MAP.startK, mode: 'ground', anim: 'idle', t: 0, timer: 0, vx: 0, vy: 0, kx: 0, ky: 0, crouch: false, wid: '', pending: null,
   gore: 0, hp: HP, st: ST, stT: 0, flash: 0, stats: { kills: 0, wounds: 0, t0: performance.now() }, deathT: 0 };
 const dust = [];
 const info = a => animInfo(a, pl.wid);
@@ -138,8 +160,8 @@ const done = () => Math.floor(pl.t * (pl.fps || info(pl.anim).fps)) >= info(pl.a
 const puff = (n, spread, x = pl.x, y = pl.y) => { for (let i = 0; i < n; i++) { const a = Math.random() * 6.28; dust.push({ x, y, vx: Math.cos(a) * spread * (.5 + Math.random()), vy: Math.sin(a) * spread * (.5 + Math.random()), z: 1, life: .45 + Math.random() * .3, t: 0 }); } };
 const spend = n => { pl.st = Math.max(0, pl.st - n); pl.stT = .7; };
 const startBlow = n => {
-  const s = WSTAT[pl.wid]; if (pl.st < s.stam * .4) { pl.tired = .5; return false; }
-  spend(s.stam); pl.crouch = false; pl.mode = 'atk'; pl.blow = n; pl.queued = false; pl.fps = 0; pl.anim = 'atk' + n; pl.t = 0; pl.lunged = false; return true;
+  const s = WSTAT[pl.wid]; if (pl.st < s.stam * .4) { pl.tired = .5; SFX.breath(); return false; }
+  spend(s.stam); pl.crouch = false; pl.mode = 'atk'; pl.blow = n; pl.queued = false; pl.fps = 0; pl.anim = 'atk' + n; pl.t = 0; pl.lunged = false; pl.swung = false; return true;
 };
 const dirOf = k => [Math.cos(k * Math.PI / 4), Math.sin(k * Math.PI / 4)];
 let hitStop = 0, shake = 0;
@@ -165,11 +187,11 @@ function pickWeapon() {
 function hurtPriest(dmg, fx, fy, knock = 0, by = null) {
   if (pl.mode === 'dead' || pl.mode === 'roll') return false;
   if (pl.mode === 'pray' || pl.mode === 'unpray') dmg *= 1.5;
-  pl.hp -= dmg; pl.flash = .12; pl.fightT = 0; pl.stats.wounds++; pl.gore += .02 + dmg / 300; shake = Math.max(shake, .18);
+  pl.hp -= dmg; if (pl.hp > 0) SFX.hurt(panOf(pl), dmg); pl.flash = .12; pl.fightT = 0; pl.stats.wounds++; pl.gore += .02 + dmg / 300; shake = Math.max(shake, .18);
   const l = Math.hypot(fx, fy) || 1;
   bleed(pl.x, pl.y, 36, fx / l, fy / l, 18 + dmg * 1.5); splat({ x: pl.x + fx / l * 3, y: pl.y + fy / l * 3, r: 2 + dmg / 8, el: 1.2, dx: fx, dy: fy });
   pl.kx += fx / l * knock * 4; pl.ky += fy / l * knock * 4;
-  if (pl.hp <= 0) { pl.hp = 0; pl.mode = 'dead'; pl.fps = 0; setAnim('death'); pl.frame = null; bleed(pl.x, pl.y, 30, 0, 0, 80, 1.1); fallen(by);
+  if (pl.hp <= 0) { pl.hp = 0; pl.mode = 'dead'; pl.fps = 0; setAnim('death'); pl.frame = null; bleed(pl.x, pl.y, 30, 0, 0, 80, 1.1); fallen(by); SFX.die(panOf(pl));
     pools.push({ x: pl.x, y: pl.y, t: -.8, r: 0, max: 20, el: .5, dx: 1, dy: 1, seed: (Math.random() * 1e9 | 0) + 1 }); return true; }
   if (pl.mode !== 'air' && pl.mode !== 'prep' && (pl.mode !== 'atk' || dmg >= 15)) { pl.mode = 'act'; pl.fps = 0; setAnim('hurt'); pl.frame = null; pl.crouch = false; }
   return true;
@@ -199,7 +221,7 @@ function fallen(by) {
 function revive() {
   deathEl.className = ''; deathEl.innerHTML = ''; pl.stats = { kills: 0, wounds: 0, t0: performance.now() };
   foes.length = 0; bolts.length = 0; pendingSpawn.length = 0;
-  Object.assign(pl, { hp: HP, st: ST, mode: 'ground', x: 0, y: 0, z: 0, kx: 0, ky: 0, gore: 0, frame: null }); setAnim('idle');
+  Object.assign(pl, { hp: HP, st: ST, mode: 'ground', x: MAP.start[0], y: MAP.start[1], k: MAP.startK, z: 0, kx: 0, ky: 0, gore: 0, frame: null }); setAnim('idle');
 }
 
 function update(dt) {
@@ -207,6 +229,7 @@ function update(dt) {
   pickWeapon();
   if (pl.pending !== null && SETS[pl.pending] && pl.mode !== 'atk') {
     const old = pl.wid || ''; if (CLEAN[old]) SETS[old] = CLEAN[old];
+    if (pl.wid !== pl.pending) SFX.equip(pl.pending);
     pl.wid = pl.pending; pl.pending = null; if (!info(pl.anim)) setAnim('idle');
   }
   const mv = moveVec(), shift = down('ShiftLeft', 'ShiftRight');
@@ -222,12 +245,16 @@ function update(dt) {
       const a = mv ? (pl.crouch ? 'cwalk' : shift ? 'run' : 'walk') : pl.cleaning ? 'clean' : (pl.crouch ? 'crouch' : 'idle');
       if (a === 'clean') pl.crouch = false;
       setAnim(a); pl.fps = mv ? fpsOf(a, speed) : 0;
+      if (mv) { const f = frameOf(); if ((f === 0 || f === info(a).n / 2) && f !== pl.stepF) SFX.step(a === 'run', a === 'cwalk', WORLD.floorAt(pl.x, pl.y)); pl.stepF = f; } else pl.stepF = -1;
       if (a === 'run' && Math.random() < dt * 6) puff(1, 6);
       pl.vx = mv ? mv.x * speed : 0; pl.vy = mv ? mv.y * speed : 0;
       if (blowKey >= 0 && pl.wid) { if (mv) pl.k = mv.k; startBlow(blowKey || 1); }
-      else if (pressed('Space')) { pl.crouch = false; pl.mode = 'prep'; pl.timer = .09; pl.fps = 0; setAnim('jump'); }
-      else if (pressed('KeyQ') && canRoll()) { if (mv) pl.k = mv.k; spend(ROLL_COST); pl.mode = 'roll'; pl.fps = 0; setAnim('roll'); puff(4, 10); }
-      else if (pressed('KeyE')) { pl.mode = 'act'; pl.fps = 0; setAnim('interact'); }
+      else if (pressed('Space')) { pl.crouch = false; pl.mode = 'prep'; pl.timer = .055; pl.fps = 0; setAnim('jump'); SFX.jump(); }
+      else if (pressed('KeyQ') && canRoll()) { if (mv) pl.k = mv.k; spend(ROLL_COST); pl.mode = 'roll'; pl.fps = 0; setAnim('roll'); puff(4, 10); SFX.roll(); }
+      else if (pressed('KeyE')) {
+        const dr = WORLD.toggleDoor(pl.x, pl.y, [pl, ...foes.filter(alive)]); if (dr) SFX.door(dr.open, panOf(dr));
+        pl.mode = 'act'; pl.fps = 0; setAnim('interact');
+      }
       else if (pressed('KeyR')) { pl.mode = 'pray'; pl.fps = 0; setAnim('pray'); }
       else if (pressed('KeyF') && pl.st > 5) { pl.mode = 'cross'; pl.fps = 0; setAnim('cross'); }
       break;
@@ -236,8 +263,9 @@ function update(dt) {
       if (blowKey === 0 && pl.blow < 3 && frameOf() >= 2) pl.queued = true;
       if (blowKey > 0 && frameOf() >= 4) pl.queuedTo = blowKey;
       // Rolling out of a blow once it has landed.
-      if (pressed('KeyQ') && frameOf() >= 4 && canRoll()) { if (mv) pl.k = mv.k; spend(ROLL_COST); pl.mode = 'roll'; pl.fps = 0; setAnim('roll'); puff(4, 10); break; }
+      if (pressed('KeyQ') && frameOf() >= 4 && canRoll()) { if (mv) pl.k = mv.k; spend(ROLL_COST); pl.mode = 'roll'; pl.fps = 0; setAnim('roll'); puff(4, 10); SFX.roll(); break; }
       const f = frameOf();
+      if (f >= 2 && !pl.swung) { pl.swung = true; SFX.swing(pl.wid, pl.blow, panOf(pl)); }
       if (f === 3 || f === 4) { const d = dirOf(pl.k), sp = WEAPONS[pl.wid].two ? 34 : 44; pl.x += d[0] * sp * dt; pl.y += d[1] * sp * dt; }
       if (f === 3 && !pl.lunged) { pl.lunged = true; puff(2, 6); }
       if (done()) {
@@ -255,8 +283,8 @@ function update(dt) {
       pl.airT += dt;
       if (mv) { pl.vx += (mv.x * WALK - pl.vx) * Math.min(1, dt * 2); pl.vy += (mv.y * WALK - pl.vy) * Math.min(1, dt * 2); pl.k = mv.k; }
       pl.x += pl.vx * dt; pl.y += pl.vy * dt; pl.z += pl.vz * dt; pl.vz -= G * dt;
-      pl.frame = pl.airT < .1 ? 1 : pl.vz > 45 ? 2 : pl.vz > -45 ? 3 : 4;
-      if (pl.z <= 0) { pl.z = 0; pl.vz = 0; pl.mode = 'land'; pl.timer = .13; puff(6, 12); }
+      pl.frame = pl.airT < .07 ? 1 : pl.vz > JUMPV * .3 ? 2 : pl.vz > -JUMPV * .3 ? 3 : 4;
+      if (pl.z <= 0) { pl.z = 0; pl.vz = 0; pl.mode = 'land'; pl.timer = .085; puff(6, 12); SFX.land(); }
       break;
     }
     case 'land':
@@ -291,11 +319,28 @@ function update(dt) {
   pl.x += pl.kx * dt; pl.y += pl.ky * dt; pl.kx *= Math.exp(-dt * 7); pl.ky *= Math.exp(-dt * 7);
   pl.stT -= dt; if (pl.stT <= 0 && pl.mode !== 'cross') pl.st = Math.min(ST, pl.st + ST_REGEN * dt);
   pl.flash = Math.max(0, pl.flash - dt); pl.tired = Math.max(0, (pl.tired || 0) - dt);
-  clampToView(pl);
+  WORLD.tick(dt);
+  WORLD.collide(pl, 7);
+  WORLD.prefetch(pl.x, pl.y, MOBILE ? 3 : 4);
+  // The camera follows him, looking a little ahead of where he goes; some places pull it toward what matters there.
+  {
+    const C = 20 * Math.SQRT2, ci = pl.x / C, cj = pl.y / C, Z = MAP.zones.find(z => ci >= z.r[0] && ci < z.r[2] && cj >= z.r[1] && cj < z.r[3]);
+    look.x += (pl.vx * .45 - look.x) * Math.min(1, dt * 2); look.y += (pl.vy * .45 - look.y) * Math.min(1, dt * 2);
+    let tx = pl.x + look.x, ty = pl.y + look.y;
+    const c = Z?.cam;
+    if (c?.at) { tx += (c.at[0] * C - tx) * c.w; ty += (c.at[1] * C - ty) * c.w; }
+    if (c?.axis) tx += (c.axis[0] * C - tx) * c.axis[1];
+    if (c?.ahead) ty += c.ahead * C;
+    const k = Math.min(1, dt * 3.2); cam.x += (tx - cam.x) * k; cam.y += (ty - cam.y) * k;
+    // Its name, as he comes in.
+    if (Z && Z.name !== place.name && pl.mode !== 'dead') { place.name = Z.name; place.t = 0; }
+    CHART.enter(Z); CHART.reveal(pl.x, pl.y);
+    place.t += dt;
+  }
 
   if (pressed('KeyN')) { const id = ENEMY_IDS[spawnIdx % ENEMY_IDS.length]; spawnIdx++; wantE = id; pendingSpawn.push(id); }
   if (pressed('KeyB')) for (let i = 0; i < 6; i++) { const id = ENEMY_IDS[Math.random() * ENEMY_IDS.length | 0]; pendingSpawn.push(id); }
-  if (pressed('KeyM')) { foes.length = 0; bolts.length = 0; pendingSpawn.length = 0; drops.length = 0; pools.length = 0; splats.length = 0; resetFloor(); pl.gore = 0; }
+  if (pressed('KeyX')) { foes.length = 0; bolts.length = 0; pendingSpawn.length = 0; drops.length = 0; pools.length = 0; splats.length = 0; resetFloor(); pl.gore = 0; }
   updateFoes(dt);
   updateBlood(dt);
   // Once the killing is over he comes clean again (standing still, wiping himself down).
@@ -307,25 +352,19 @@ function update(dt) {
   for (const p of dust) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.z += 8 * dt; p.vx *= .92; p.vy *= .92; }
   for (let i = dust.length - 1; i >= 0; i--) if (dust[i].t > dust[i].life) dust.splice(i, 1);
 }
-function clampToView(o) {
-  const [sx, sy] = toScreen(o.x, o.y, 0), mx = view.w / 2 - 26, my = view.h / 2 - 14;
-  const cx = Math.max(-mx, Math.min(mx, sx)), cy = Math.max(-my + 50, Math.min(my, sy));
-  if (cx !== sx || cy !== sy) { const a = cx / Math.SQRT1_2, b = cy / (Math.SQRT1_2 * .5); o.x = (a + b) / 2; o.y = (b - a) / 2; }
-}
 
 // ---------------------------------------------------------------- blood
-const floor = document.createElement('canvas'); let floorCtx = floor.getContext('2d');
 const splats = [], drops = [], pools = [];
 const BLOOD = ['#2e0404', '#4a0808', '#6a0e0c', '#8a1610', '#a82018', '#c2301e'];
 const rnd = (a, b) => a + Math.random() * (b - a);
 const srand = seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 function paintSplat(g, s) {
-  const [sx, sy] = toScreen(s.x, s.y, 0), cx = Math.round(view.w / 2 + sx), cy = Math.round(view.h / 2 + sy);
+  const [sx, sy] = toScreen(s.x, s.y, 0), cx = Math.round(sx), cy = Math.round(sy - WORLD.heightAt(s.x, s.y));   // map screen space: the world's blood layer (lifted on the dais)
   const R = srand(s.seed), r = s.r, el = s.el || 0;
   let [dx, dy] = toScreen(s.dx || 1, s.dy || 0, 0); const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
-  const ra = r * (1 + el), W = Math.ceil(ra + 2), H = Math.ceil(ra * .6 + 2);
+  const ra = r * (1 + el), W = Math.ceil(ra + 2), H = Math.ceil(ra * GK * 1.2 + 2);
   for (let j = -H; j <= H; j++) for (let i = -W; i <= W; i++) {
-    const y2 = j / .55, a = i * dx + y2 * dy, b = -i * dy + y2 * dx, d = (a / ra) ** 2 + (b / r) ** 2;
+    const y2 = j / (GK * 1.1), a = i * dx + y2 * dy, b = -i * dy + y2 * dx, d = (a / ra) ** 2 + (b / r) ** 2;
     if (d > 1 + (R() - .5) * .55) continue;
     let c = s.pool ? (d < .55 ? 1 : d < .85 ? 2 : 1) : (d < .35 ? 3 : d < .8 ? 2 : 1);
     if (R() < .08) c += 1; if (s.pool && d > .88 && R() < .3) c = 4;
@@ -334,12 +373,12 @@ function paintSplat(g, s) {
   }
   const n = s.pool ? 0 : Math.round(r * .8 + el * 2);
   for (let k = 0; k < n; k++) {
-    const t = R() * Math.PI * 2, rr = r * (1.3 + R() * (1.2 + el)), ox = Math.cos(t) * rr + dx * el * r * R(), oy = Math.sin(t) * rr * .55 + dy * el * r * R();
+    const t = R() * Math.PI * 2, rr = r * (1.3 + R() * (1.2 + el)), ox = Math.cos(t) * rr + dx * el * r * R(), oy = Math.sin(t) * rr * GK * 1.1 + dy * el * r * R();
     g.fillStyle = BLOOD[2 + (R() < .4 ? 1 : 0)]; g.fillRect(Math.round(cx + ox), Math.round(cy + oy), 1, 1);
   }
 }
-function splat(s) { s.seed = s.seed || (Math.random() * 1e9 | 0) + 1; splats.push(s); if (splats.length > PERF.splats) splats.shift(); paintSplat(floorCtx, s); }
-function resetFloor() { floor.width = view.w; floor.height = view.h; floorCtx = floor.getContext('2d'); for (const s of splats) paintSplat(floorCtx, s); }
+function splat(s) { s.seed = s.seed || (Math.random() * 1e9 | 0) + 1; splats.push(s); if (splats.length > PERF.splats) splats.shift(); paintSplat(WORLD.blood, s); }
+function resetFloor() { WORLD.clearBlood(); for (const s of splats) paintSplat(WORLD.blood, s); }
 function bleed(x, y, z, dx, dy, n, power = 1) {
   n = Math.round(n * PERF.blood);
   for (let i = 0; i < n; i++) {
@@ -379,12 +418,11 @@ const eFrame = f => { const A = eInfo(f), n = Math.floor(f.t * (f.fps || A.fps |
 const eDone = f => Math.floor(f.t * (f.fps || eInfo(f).fps)) >= eInfo(f).n;
 const alive = f => f.anim !== 'death';
 function spawnFoe(id) {
-  // From a random edge of what the camera sees.
-  const side = Math.random() * 4 | 0, u = Math.random(), mx = view.w / 2 - 30, my = view.h / 2 - 20;
-  const sx = side < 2 ? (side ? mx : -mx) : (u * 2 - 1) * mx, sy = side >= 2 ? (side === 2 ? -my + 50 : my) : (u * 2 - 1) * my + 25;
-  const a = sx / Math.SQRT1_2, b = sy / (Math.SQRT1_2 * .5);
-  foes.push({ id, x: (a + b) / 2, y: (b - a) / 2, k: 0, anim: 'idle', t: Math.random(), hp: ESTAT[id].hp, fps: 0, dead: 0, cool: .8 + Math.random() * .8,
+  // Somewhere free a little way off.
+  const [x, y] = WORLD.freeNear(pl.x, pl.y, 200, 300);
+  foes.push({ id, x, y, k: 0, anim: 'idle', t: Math.random(), hp: ESTAT[id].hp, fps: 0, dead: 0, cool: .8 + Math.random() * .8,
     side: Math.random() < .5 ? 1 : -1, flash: 0, barT: 0, kx: 0, ky: 0, seed: Math.random() * 100 });
+  SFX.summon(panOf(foes[foes.length - 1]), id);
 }
 // The priest's blow, landing on frame 3 of every swing.
 function priestBlow() {
@@ -401,11 +439,14 @@ function priestBlow() {
     bleed(f.x, f.y, 34 * sc, dx / d, dy / d, Math.round(30 + dmg * 16), WEAPONS[pl.wid].two ? 1.25 : 1);
     splat({ x: f.x + dx / d * 4, y: f.y + dy / d * 4, r: 3 + dmg * 1.2 * sc, el: 1.5, dx, dy });
     pl.gore += .02 + dmg * .015; pl.fightT = 0;
+    SFX.hit(pl.wid, pl.blow, f.hp <= 0, panOf(f));
     if (f.hp <= 0) {
+      SFX.cry(f.id, 'death', panOf(f));
       f.anim = ''; f.fps = 0; eSet(f, 'death'); f.charge = null; pl.stats.kills++;
       bleed(f.x, f.y, 30 * sc, dx / d, dy / d, 110, 1.3); bleed(f.x, f.y, 26 * sc, 0, 0, 40, .8); gibs(f.x, f.y, 30 * sc, 10); pl.gore += .04;
       pools.push({ x: f.x, y: f.y, t: -.7, r: 0, max: 16 * sc + Math.random() * 5, el: .6, dx, dy, seed: (Math.random() * 1e9 | 0) + 1 });
-    } else if (dmg >= E.poise) { f.anim = ''; f.fps = 0; eSet(f, 'hurt'); f.charge = null; f.combo = null; }
+    } else if (dmg >= E.poise) { f.anim = ''; f.fps = 0; eSet(f, 'hurt'); f.charge = null; f.combo = null; SFX.pain(f.id, pl.wid, pl.blow, panOf(f), true); }
+    else SFX.pain(f.id, pl.wid, pl.blow, panOf(f), false);
   }
   if (any) { hitStop = .055; shake = Math.max(shake, .12); }
 }
@@ -414,7 +455,7 @@ const sepOf = f => 8 * ((ENEMIES[f.id].look.scale || 1) + 1);
 const reachOf = f => sepOf(f) + ENEMIES[f.id].range * .5 + 5;
 const isAtk = a => a === 'atk' || a === 'atk2' || a === 'atk3';
 const MULT = { atk: 1, atk2: .8, atk3: 1.4 };
-const startAttack = (f, a, leap = false) => { f.fps = 0; f.anim = ''; eSet(f, a); f.leapA = leap; };
+const startAttack = (f, a, leap = false) => { f.fps = 0; f.anim = ''; eSet(f, a); f.leapA = leap; if (Math.random() < .55) SFX.cry(f.id, 'atk', panOf(f)); };
 const nextCombo = f => { const C = ENEMIES[f.id].combos; f.combo = [...C[Math.random() * C.length | 0]]; startAttack(f, f.combo.shift()); };
 function walkAnim(f, sp) { const A = ENEMIES[f.id].anims.walk; eSet(f, 'walk'); f.fps = A.hop ? 9 : A.n * sp * A.stance / (2 * A.stride); }
 
@@ -424,6 +465,7 @@ function updateFoes(dt) {
   if (pl.mode === 'atk' && frameOf() === 3 && !pl.hitDone) { pl.hitDone = true; priestBlow(); }
   // The crucifix held up: the demon's own burn and are driven back, the possessed cower.
   const crossUp = pl.mode === 'cross' && pl.t * 8 >= 2, cd = dirOf(pl.k);
+  SFX.crossOn(crossUp); SFX.prayOn(pl.mode === 'pray'); SFX.lowHp(pl.hp, pl.mode === 'pray' || pl.mode === 'dead');
   for (const f of foes) {
     f.t += dt; f.flash = Math.max(0, f.flash - dt); f.barT = Math.max(0, f.barT - dt);
     f.x += f.kx * dt; f.y += f.ky * dt; f.kx *= Math.exp(-dt * 8); f.ky *= Math.exp(-dt * 8);
@@ -431,9 +473,9 @@ function updateFoes(dt) {
     if (!alive(f)) { if (eDone(f)) f.dead += dt; continue; }
     f.cowed = false;
     if (crossUp && d < 85 && (-dx * cd[0] - dy * cd[1]) / d > .45) {
-      f.cowed = true; f.x -= dx / d * 34 * dt; f.y -= dy / d * 34 * dt; f.combo = null; f.charge = null;
-      if (S.demon) { f.burn = (f.burn || 0) + dt; if (f.burn > .45) { f.burn = 0; f.hp -= .5; f.flash = .1; f.barT = 3; bleed(f.x, f.y, 30 * sc, -dx / d, -dy / d, 6, .6);
-        if (f.hp <= 0) { f.anim = ''; eSet(f, 'death'); pl.stats.kills++; bleed(f.x, f.y, 30 * sc, 0, 0, 60, 1); pools.push({ x: f.x, y: f.y, t: -.7, r: 0, max: 14 * sc, el: .3, dx: 1, dy: 0, seed: (Math.random() * 1e9 | 0) + 1 }); continue; } } }
+      f.cowed = true; SFX.cry(f.id, 'cow', panOf(f)); f.x -= dx / d * 34 * dt; f.y -= dy / d * 34 * dt; f.combo = null; f.charge = null;
+      if (S.demon) { f.burn = (f.burn || 0) + dt; if (f.burn > .45) { f.burn = 0; f.hp -= .5; SFX.sizzle(panOf(f)); f.flash = .1; f.barT = 3; bleed(f.x, f.y, 30 * sc, -dx / d, -dy / d, 6, .6);
+        if (f.hp <= 0) { f.anim = ''; eSet(f, 'death'); pl.stats.kills++; SFX.cry(f.id, 'death', panOf(f)); bleed(f.x, f.y, 30 * sc, 0, 0, 60, 1); pools.push({ x: f.x, y: f.y, t: -.7, r: 0, max: 14 * sc, el: .3, dx: 1, dy: 0, seed: (Math.random() * 1e9 | 0) + 1 }); continue; } } }
       if (isAtk(f.anim) && eFrame(f) < 3) eSet(f, 'idle');
       if (f.anim !== 'hurt' && !isAtk(f.anim)) { f.k = octOf(dx, dy); eSet(f, 'idle'); f.fps = 0; }
       continue;
@@ -458,13 +500,14 @@ function updateFoes(dt) {
       if (fr === 3 && !f.struck) {
         f.struck = true;
         const mult = MULT[f.anim];
+        if (f.id === 'obispo' && f.anim !== 'atk2') SFX.fire(panOf(f)); else SFX.eswing(f.id, E.look.scale, panOf(f));
         if (f.id === 'obispo' && f.anim !== 'atk2') {
           const n = f.anim === 'atk3' ? 3 : 1, a0 = Math.atan2(dy, dx);
           for (let i = 0; i < n; i++) { const a = a0 + (i - (n - 1) / 2) * .32; bolts.push({ x: f.x + ef[0] * 12, y: f.y + ef[1] * 12, z: 32, vx: Math.cos(a) * 95, vy: Math.sin(a) * 95, t: 0, dmg: S.dmg * (n > 1 ? .8 : 1), by: f.id }); }
         } else {
           const aoe = (E.aoe || []).includes(f.anim), front = (dx * ef[0] + dy * ef[1]) / d;
           if (d < reachOf(f) + 8 && (aoe || front > .2)) hurtPriest(S.dmg * mult, dx, dy, f.id === 'carnicero' || f.id === 'crucificado' || f.id === 'cabrio' ? 14 : 5, f.id);
-          if (aoe && f.id === 'cabrio') { shake = Math.max(shake, .25); puff(14, 30, f.x + ef[0] * 14, f.y + ef[1] * 14); }
+          if (aoe && f.id === 'cabrio') { shake = Math.max(shake, .25); SFX.stomp(panOf(f)); puff(14, 30, f.x + ef[0] * 14, f.y + ef[1] * 14); }
         }
       }
       if (eDone(f)) {
@@ -479,7 +522,7 @@ function updateFoes(dt) {
     const R = reachOf(f);
     // Their own tricks from a distance.
     if (f.cool <= 0) {
-      if (f.id === 'cabrio' && d > 55 && d < 140) { f.charge = { dx: dx / d, dy: dy / d, t: 0 }; eSet(f, 'walk'); continue; }
+      if (f.id === 'cabrio' && d > 55 && d < 140) { f.charge = { dx: dx / d, dy: dy / d, t: 0 }; SFX.snort(panOf(f)); SFX.cry(f.id, 'atk', panOf(f)); eSet(f, 'walk'); continue; }
       if (E.leap && d > R + 6 && d < 78) { startAttack(f, 'atk', true); continue; }
       if (f.id === 'monja' && d > R + 4 && d < 52) { startAttack(f, 'atk', true); continue; }
       if (f.id === 'obispo' && d > R + 6 && d < 170) { startAttack(f, Math.random() < .4 ? 'atk3' : 'atk'); continue; }
@@ -514,7 +557,7 @@ function updateFoes(dt) {
       const m = b === pl ? sepOf(a) : 9 * ((ENEMIES[a.id].look.scale || 1) + (ENEMIES[b.id].look.scale || 1));
       if (d > 0 && d < m) { const k = b === pl ? 1 : .5; a.x += dx / d * (m - d) * k; a.y += dy / d * (m - d) * k; }
     }
-    clampToView(a);
+    WORLD.collide(a, 7 * (ENEMIES[a.id].look.scale || 1));
   }
   for (const f of foes) {
     if (!alive(f)) continue;
@@ -526,22 +569,23 @@ function updateFoes(dt) {
   for (const b of bolts) {
     b.t += dt; b.x += b.vx * dt; b.y += b.vy * dt;
     const dx = b.x - pl.x, dy = b.y - pl.y, d = Math.hypot(dx, dy) || 1;
-    if (crossUp && d < 40 && (dx * cd[0] + dy * cd[1]) / d > .3) { b.t = 9; puff(6, 14, b.x, b.y); continue; }   // shattered on the cross
-    if (d < 10 && pl.z < 20) { b.t = 9; hurtPriest(b.dmg, b.vx, b.vy, 4, b.by); }
+    if (crossUp && d < 40 && (dx * cd[0] + dy * cd[1]) / d > .3) { b.t = 9; puff(6, 14, b.x, b.y); SFX.shatter(panOf(b)); continue; }   // shattered on the cross
+    if (WORLD.solidAt(b.x, b.y)) { b.t = 9; puff(4, 10, b.x, b.y); continue; }
+    if (d < 10 && pl.z < 20) { b.t = 9; if (hurtPriest(b.dmg, b.vx, b.vy, 4, b.by)) SFX.sizzle(panOf(pl)); }
   }
   for (let i = bolts.length - 1; i >= 0; i--) if (bolts[i].t > 2.2) bolts.splice(i, 1);
 }
 
 // ---------------------------------------------------------------- drawing
-const view = { w: 400, h: 225, s: 3 };
+const view = { w: 400, h: 225, s: 3 }, cam = { x: MAP.start[0], y: MAP.start[1] }, look = { x: 0, y: 0 }, place = { name: '', t: 99 };
+const panOf = o => Math.max(-1, Math.min(1, ((o.x - o.y) - (cam.x - cam.y)) * Math.SQRT1_2 / (view.w / 2) * .85));
 let gallery = false, gIdx = 0, gT = 0, gWid = '', gWho = 0;
 function resize() {
   const W = innerWidth, H = innerHeight;
-  view.s = gallery ? Math.max(1, Math.floor(Math.min(W / 560, H / 290))) : Math.max(2, Math.floor(Math.min(W / 400, H / 225)));
+  view.s = gallery ? Math.max(1, Math.floor(Math.min(W / 560, H / 290))) : Math.max(2, Math.floor(Math.min(W / 440, H / 248)))   // close in, the way Diablo's camera sits over its hero;
   view.w = Math.ceil(W / view.s); view.h = Math.ceil(H / view.s);
   cv.width = view.w; cv.height = view.h; cv.style.width = view.w * view.s + 'px'; cv.style.height = view.h * view.s + 'px';
   ctx.imageSmoothingEnabled = false;
-  if (!gallery && (floor.width !== view.w || floor.height !== view.h)) resetFloor();
 }
 addEventListener('resize', resize);
 
@@ -550,21 +594,25 @@ function shadow(x, y, rx, ry, a) {
   for (let j = -ry; j <= ry; j++) { const w = Math.round(rx * Math.sqrt(1 - (j / (ry + .5)) ** 2)); ctx.fillRect(Math.round(x - w), Math.round(y + j), w * 2, 1); }
 }
 // The same sprite added on top of itself: a white-hot flash, cheap everywhere.
+const scr = { ox: 0, oy: 0 };   // where the map's origin was drawn last frame
 const glow = (fn, a) => { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a; fn(); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; };
 const drawS = (sh, a, k, f, x, y) => sh.draw(ctx, fkey(a, k, f), Math.round(x - OX), Math.round(y - OY));
 const bar = (x, y, w, h, v, fg, bg = '#2a2228') => { ctx.fillStyle = bg; ctx.fillRect(x, y, w, h); ctx.fillStyle = fg; ctx.fillRect(x, y, Math.round(w * Math.max(0, Math.min(1, v))), h); };
 
 function drawPlay() {
-  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, view.w, view.h);
-  const sk = shake > 0 ? 2 : 0, ox = view.w / 2 + (sk ? Math.round(rnd(-sk, sk)) : 0), oy = view.h / 2 + (sk ? Math.round(rnd(-sk, sk)) : 0);
-  ctx.drawImage(floor, ox - view.w / 2, oy - view.h / 2);
+  ctx.fillStyle = '#0b090a'; ctx.fillRect(0, 0, view.w, view.h);
+  // ox, oy: where the map's origin lands on screen, so the camera's spot is in the middle (a little low: he stands, the view is above).
+  const sk = shake > 0 ? 2 : 0, [csx, csy] = toScreen(cam.x, cam.y, 0);
+  const ox = Math.round(view.w / 2 - csx) + (sk ? Math.round(rnd(-sk, sk)) : 0), oy = Math.round(view.h / 2 + 18 - csy) + (sk ? Math.round(rnd(-sk, sk)) : 0);
+  scr.ox = ox; scr.oy = oy;
+  WORLD.drawFloor(ctx, ox, oy, view.w, view.h);
   for (const p of pools) if (p.t > 0 && !p.done) {
     if (!p.cv || p.r - p.cr >= .8) {
-      const R = Math.ceil(p.r * (1 + p.el)) + 4; p.cv = p.cv || document.createElement('canvas'); p.cv.width = R * 2 + 1; p.cv.height = Math.ceil(R * 1.3) + 4;
-      p.cr = p.r; const [sx, sy] = toScreen(p.x, p.y, 0); p.ax = Math.round(view.w / 2 + sx) - R; p.ay = Math.round(view.h / 2 + sy) - Math.ceil(R * .65) - 2;
-      const g = p.cv.getContext('2d'); g.translate(-p.ax, -p.ay); paintSplat(g, { x: p.x, y: p.y, r: p.r, el: p.el, dx: p.dx, dy: p.dy, pool: 1, seed: p.seed });
+      const R = Math.ceil(p.r * (1 + p.el)) + 4; p.cv = p.cv || document.createElement('canvas'); p.cv.width = R * 2 + 1; p.cv.height = Math.ceil(R * GK * 2.6) + 4;
+      p.cr = p.r; const [sx, sy] = toScreen(p.x, p.y, 0); p.ax = Math.round(sx) - R; p.ay = Math.round(sy - WORLD.heightAt(p.x, p.y)) - Math.ceil(R * GK * 1.3) - 2;
+      const g = p.cv.getContext('2d'); g.setTransform(1, 0, 0, 1, -p.ax, -p.ay); g.clearRect(p.ax, p.ay, p.cv.width, p.cv.height); paintSplat(g, { x: p.x, y: p.y, r: p.r, el: p.el, dx: p.dx, dy: p.dy, pool: 1, seed: p.seed });
     }
-    ctx.drawImage(p.cv, p.ax + ox - view.w / 2, p.ay + oy - view.h / 2);
+    ctx.drawImage(p.cv, p.ax + ox, p.ay + oy);
   }
   for (const p of dust) { const [sx, sy] = toScreen(p.x, p.y, p.z), a = 1 - p.t / p.life; ctx.fillStyle = `rgba(120,112,108,${a * .55})`; ctx.fillRect(Math.round(ox + sx), Math.round(oy + sy), 2, 2); }
   // The crucifix's reach, a faint holy glare on the floor.
@@ -573,27 +621,28 @@ function drawPlay() {
     const g = ctx.createRadialGradient(ox + cx, oy + cy, 2, ox + cx, oy + cy, 46); g.addColorStop(0, 'rgba(255,236,170,.32)'); g.addColorStop(1, 'rgba(255,236,170,0)');
     ctx.fillStyle = g; ctx.fillRect(ox + cx - 50, oy + cy - 50, 100, 100);
   }
-  const [gx, gy] = toScreen(pl.x, pl.y, 0), hz = pl.z;
+  const [gx, gy0] = toScreen(pl.x, pl.y, 0), gy = gy0 - WORLD.heightAt(pl.x, pl.y), hz = pl.z;   // lifted when he stands on the dais
   const lying = pl.anim === 'death' && frameOf() >= 7, f = pl.frame ?? frameOf();
   const list = [{ d: pl.x + pl.y, draw: () => {
-    shadow(ox + gx, oy + gy, Math.max(6, (lying ? 20 : 12) - hz * .12), Math.max(2, 5 - hz * .05), Math.max(.08, .22 - hz * .004));
-    drawS(SETS[pl.wid], pl.anim, pl.k, f, ox + gx, oy + gy - hz * Math.cos(Math.PI / 6));
-    if (pl.flash > 0) glow(() => drawS(SETS[pl.wid], pl.anim, pl.k, f, ox + gx, oy + gy - hz * Math.cos(Math.PI / 6)), .75);
+    shadow(ox + gx, oy + gy, Math.max(6, (lying ? 20 : 12) - hz * .12), Math.max(3, (5 - hz * .05) * GK * 2), Math.max(.08, .22 - hz * .004));
+    drawS(SETS[pl.wid], pl.anim, pl.k, f, ox + gx, oy + gy - hz * GV);
+    if (pl.flash > 0) glow(() => drawS(SETS[pl.wid], pl.anim, pl.k, f, ox + gx, oy + gy - hz * GV), .75);
     ctx.globalAlpha = 1;
   } }];
   for (const e of foes) list.push({ d: e.x + e.y - (!alive(e) && eDone(e) ? 40 : 0), draw: () => {
-    const [sx, sy] = toScreen(e.x, e.y, 0), sc = ENEMIES[e.id].look.scale || 1;
+    const [sx, sy0] = toScreen(e.x, e.y, 0), sy = sy0 - WORLD.heightAt(e.x, e.y), sc = ENEMIES[e.id].look.scale || 1;
     ctx.globalAlpha = e.dead > 28 ? Math.max(0, 1 - (e.dead - 28) / 2) : 1;
-    shadow(ox + sx, oy + sy, Math.round(12 * sc), Math.max(2, Math.round(5 * sc)), .2);
+    shadow(ox + sx, oy + sy, Math.round(12 * sc), Math.max(3, Math.round(5 * sc * GK * 2)), .2);
     drawS(ESETS[e.id], e.anim, e.k, eFrame(e), ox + sx, oy + sy);
     if (e.flash > 0) glow(() => drawS(ESETS[e.id], e.anim, e.k, eFrame(e), ox + sx, oy + sy), .8);
     else if (e.cowed && ESTAT[e.id].demon) glow(() => drawS(ESETS[e.id], e.anim, e.k, eFrame(e), ox + sx, oy + sy), .35 + .2 * Math.sin(performance.now() / 70));
     ctx.globalAlpha = 1;
-    if (alive(e) && e.barT > 0) bar(Math.round(ox + sx - 9), Math.round(oy + sy - 64 * sc), 18, 2, e.hp / ESTAT[e.id].hp, '#b8261c');
+    if (alive(e) && e.barT > 0 && !CLIP) bar(Math.round(ox + sx - 9), Math.round(oy + sy - 64 * sc), 18, 2, e.hp / ESTAT[e.id].hp, '#b8261c');
   } });
-  list.sort((p, q) => p.d - q.d).forEach(o => o.draw());
+  list.push(...WORLD.blocks(ox, oy, view.w, view.h, ox + gx, oy + gy - 24, pl.x + pl.y, pl.x, pl.y));
+  list.sort((p, q) => p.d - q.d).forEach(o => o.draw(ctx));
   for (const d of drops) {
-    const [sx, sy] = toScreen(d.x, d.y, d.z), [tx, ty] = toScreen(d.x - d.vx * .02, d.y - d.vy * .02, d.z - d.vz * .02);
+    const up = WORLD.heightAt(d.x, d.y), [sx, sy] = toScreen(d.x, d.y, d.z).map((v, n) => n ? v - up : v), [tx, ty] = toScreen(d.x - d.vx * .02, d.y - d.vy * .02, d.z - d.vz * .02).map((v, n) => n ? v - up : v);
     ctx.fillStyle = BLOOD[2]; ctx.fillRect(Math.round(ox + tx), Math.round(oy + ty), 1, 1);
     ctx.fillStyle = d.gib ? BLOOD[1] : BLOOD[4]; ctx.fillRect(Math.round(ox + sx), Math.round(oy + sy), d.sz, d.sz);
     if (d.gib) { ctx.fillStyle = BLOOD[5]; ctx.fillRect(Math.round(ox + sx), Math.round(oy + sy), 1, 1); }
@@ -604,12 +653,40 @@ function drawPlay() {
     ctx.fillStyle = '#ff6a1e'; ctx.fillRect(Math.round(ox + sx - 3), Math.round(oy + sy - 3), 6, 6);
     ctx.fillStyle = fl ? '#ffc050' : '#d0380e'; ctx.fillRect(Math.round(ox + sx - 1), Math.round(oy + sy - 2), 3, 3);
   }
+  // The dark: candles, moonlight through the windows, his own small light, fire, the crucifix.
+  const dyn = [{ x: pl.x, y: pl.y, z: 26 + WORLD.heightAt(pl.x, pl.y) / GV, col: [150, 140, 128], r: 60 }];
+  for (const b of bolts) dyn.push({ x: b.x, y: b.y, z: b.z, col: [255, 120, 40], r: 34, flicker: 1 });
+  if (pl.mode === 'cross' && pl.t * 8 >= 2) dyn.push({ x: pl.x, y: pl.y, z: 40, col: [240, 210, 130], r: 70, flicker: 2 });
+  WORLD.lightUp(ctx, ox, oy, view.w, view.h, dyn, performance.now() / 1000);
+  // The edges of the view sink into black.
+  const vg = ctx.createRadialGradient(view.w / 2, view.h / 2, view.h * .42, view.w / 2, view.h / 2, view.w * .62);
+  vg.addColorStop(0, 'rgba(4,2,6,0)'); vg.addColorStop(1, 'rgba(4,2,6,.62)'); ctx.fillStyle = vg; ctx.fillRect(0, 0, view.w, view.h);
+  // The name of the place he has walked into: comes up in the old red letters, stays a moment, goes.
+  if (place.t < 4.2 && place.name) {
+    const a = place.t < .6 ? place.t / .6 : place.t > 3.2 ? Math.max(0, (4.2 - place.t)) : 1;
+    ctx.save(); ctx.globalAlpha = a; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.font = '24px "Jacquard 24"';
+    const y = Math.round(view.h * .2), bw = Math.min(view.w, ctx.measureText(place.name).width + 120);
+    const band = ctx.createLinearGradient(view.w / 2 - bw / 2, 0, view.w / 2 + bw / 2, 0);   // a soft dark band so it reads over anything
+    band.addColorStop(0, 'rgba(6,2,4,0)'); band.addColorStop(.25, 'rgba(6,2,4,.55)'); band.addColorStop(.75, 'rgba(6,2,4,.55)'); band.addColorStop(1, 'rgba(6,2,4,0)');
+    ctx.fillStyle = band; ctx.fillRect(Math.round(view.w / 2 - bw / 2), y - 22, Math.round(bw), 32);
+    ctx.fillStyle = '#140103'; ctx.fillText(place.name, Math.round(view.w / 2), y + 2); ctx.fillStyle = '#a3150f'; ctx.fillText(place.name, Math.round(view.w / 2), y);
+    const w = Math.min(view.w * .5, ctx.measureText(place.name).width + 30); ctx.fillStyle = 'rgba(163,21,15,.5)'; ctx.fillRect(Math.round(view.w / 2 - w / 2), y + 5, Math.round(w), 1);
+    ctx.restore();
+  }
+  // Near a door: what E does.
+  const dn = pl.mode === 'ground' ? WORLD.doorNear(pl.x, pl.y) : -1;
+  if (dn >= 0 && !CLIP && !MOBILE) {
+    const txt = 'E  ' + (WORLD.doorOpen(dn) ? 'cerrar' : 'abrir'); ctx.save(); ctx.font = '16px "Pixelify Sans"'; ctx.textAlign = 'center';
+    const w = ctx.measureText(txt).width + 14, x = Math.round(view.w / 2), y = Math.round(view.h * .74);
+    ctx.fillStyle = 'rgba(6,2,4,.6)'; ctx.fillRect(Math.round(x - w / 2), y - 13, Math.round(w), 18);
+    ctx.fillStyle = '#000'; ctx.fillText(txt, x + 1, y + 1); ctx.fillStyle = '#c8b89a'; ctx.fillText(txt, x, y); ctx.restore();
+  }
   // Health and stamina; red at the edges when he's close to the end.
   const low = 1 - pl.hp / HP;
-  if (low > .55 && pl.mode !== 'dead') { const a = (low - .55) * (.9 + .3 * Math.sin(performance.now() / 160)); const g = ctx.createRadialGradient(view.w / 2, view.h / 2, view.h * .35, view.w / 2, view.h / 2, view.w * .7); g.addColorStop(0, 'rgba(120,0,0,0)'); g.addColorStop(1, `rgba(120,0,0,${a})`); ctx.fillStyle = g; ctx.fillRect(0, 0, view.w, view.h); }
+  if (low > .55 && pl.mode !== 'dead' && !CLIP) { const a = (low - .55) * (.9 + .3 * Math.sin(performance.now() / 160)); const g = ctx.createRadialGradient(view.w / 2, view.h / 2, view.h * .35, view.w / 2, view.h / 2, view.w * .7); g.addColorStop(0, 'rgba(120,0,0,0)'); g.addColorStop(1, `rgba(120,0,0,${a})`); ctx.fillStyle = g; ctx.fillRect(0, 0, view.w, view.h); }
   const bx = 8, by = MOBILE ? 8 : view.h - 16;
   if (pl.mode === 'dead') drawDeath(ox + gx, oy + gy);
-  else { bar(bx, by, 90, 4, pl.hp / HP, '#b8261c'); bar(bx, by + 6, 90, 2, pl.st / ST, pl.tired > 0 ? '#e0a020' : '#8a8490'); }
+  else if (!CLIP) { bar(bx, by, 90, 4, pl.hp / HP, '#b8261c'); bar(bx, by + 6, 90, 2, pl.st / ST, pl.tired > 0 ? '#e0a020' : '#8a8490'); }
   if (hud.style.opacity !== '0') hud.style.opacity = 0;
   if (touch) touch.draw(ctx);
 }
@@ -642,17 +719,17 @@ let paused = false, pSel = 0, pPage = 'main';
 const P_ITEMS = [['Continuar', () => setPause(false)], ['Controles', () => { pPage = 'keys'; renderPause(); }],
   ['Invocar enemigo', () => { const id = ENEMY_IDS[spawnIdx % ENEMY_IDS.length]; spawnIdx++; wantE = id; pendingSpawn.push(id); setPause(false); }],
   ['Horda de seis', () => { for (let i = 0; i < 6; i++) pendingSpawn.push(ENEMY_IDS[Math.random() * ENEMY_IDS.length | 0]); setPause(false); }],
-  ['Reiniciar combate', () => { restart(); setPause(false); }], ['Galería', () => { setPause(false); gallery = true; gT = 0; gWid = pl.wid; resize(); hud.style.opacity = 1; }]];
+  ['Reiniciar combate', () => { restart(); setPause(false); }], [() => 'Sonido: ' + SFX.label(), () => { SFX.cycle(); renderPause(); }], ['Galería', () => { setPause(false); gallery = true; gT = 0; gWid = pl.wid; resize(); hud.style.opacity = 1; }]];
 const P_KEYS = [['WASD / flechas', 'caminar'], ['Shift', 'correr'], ['Q', 'rodar (esquiva, invulnerable)'], ['Espacio', 'saltar'], ['C', 'agacharse / levantarse'],
   ['1 – 5 · 0', 'puñal, machete, hacha, candelabro, horca · sin arma'], ['Clic', 'golpe (clic otra vez encadena 1 → 2 → 3)'], ['J / K / L', 'golpe 1 / 2 / 3'],
   ['R', 'rezar: cura, pero te deja expuesto'], ['F (mantener)', 'crucifijo: repele, y quema a los demoníacos'], ['E', 'interactuar'],
-  ['N', 'invocar al siguiente enemigo'], ['B', 'horda de seis'], ['M', 'quitar enemigos y limpiar la sangre'], ['Tab', 'galería de animaciones'], ['Esc / P', 'pausa']];
+  ['N', 'invocar al siguiente enemigo'], ['B', 'horda de seis'], ['M', 'mapa'], ['X', 'quitar enemigos y limpiar la sangre'], ['V', 'sonido: anterior / retro / no'], ['Tab', 'galería de animaciones'], ['Esc / P', 'pausa']];
 function renderPause() {
   if (pPage === 'keys') {
     pauseEl.innerHTML = `<div class="p-title">Controles</div><div class="p-keys">${P_KEYS.map(([k, v]) => `<b>${k}</b><span>${v}</span>`).join('')}</div>
       <div class="p-item sel" data-i="back">Volver</div>`;
   } else {
-    pauseEl.innerHTML = `<div class="p-title">Pausa</div>${P_ITEMS.map(([t], i) => `<div class="p-item${i === pSel ? ' sel' : ''}" data-i="${i}">${t}</div>`).join('')}
+    pauseEl.innerHTML = `<div class="p-title">Pausa</div>${P_ITEMS.map(([t], i) => `<div class="p-item${i === pSel ? ' sel' : ''}" data-i="${i}">${typeof t === 'function' ? t() : t}</div>`).join('')}
       <div class="p-hint">↑ ↓ elegir · Enter aceptar · Esc continuar</div>`;
   }
   for (const el of pauseEl.querySelectorAll('.p-item')) {
@@ -661,7 +738,7 @@ function renderPause() {
   }
 }
 function setPause(on) {
-  paused = on; pPage = 'main'; if (on) pSel = 0;
+  paused = on; pPage = 'main'; if (on) { pSel = 0; SFX.prayOn(false); }
   pauseEl.classList.toggle('on', on); if (on) renderPause(); else pauseEl.innerHTML = '';
   keys.clear();
 }
@@ -724,9 +801,16 @@ let last = performance.now();
 function frame(now) {
   let dt = Math.min(.05, (now - last) / 1000); last = now;
   if (paused) { pauseInput(); hit.clear(); if (paused) { drawPlay(); drawPauseVeil(); } requestAnimationFrame(frame); last = performance.now(); return; }
+  // The map: the world holds still under it.
+  if (CHART.isOpen()) {
+    if (pressed('KeyM') || pressed('Escape') || pressed('KeyP') || pressed('Tab')) CHART.setOpen(false);
+    hit.clear(); drawPlay(); drawPauseVeil(); CHART.draw(pl.x, pl.y, pl.k, place.name); requestAnimationFrame(frame); last = performance.now(); return;
+  }
+  if (!gallery && pl.mode !== 'dead' && pressed('KeyM')) { CHART.setOpen(true); SFX.prayOn(false); hit.clear(); requestAnimationFrame(frame); return; }
   if (!gallery && pl.mode !== 'dead' && (pressed('Escape') || pressed('KeyP'))) { setPause(true); hit.clear(); requestAnimationFrame(frame); return; }
+  if (pressed('KeyV')) SFX.cycle();
   if (pressed('Tab')) { gallery = !gallery; gT = 0; gWid = pl.wid; resize(); }
-  if (gallery) hud.style.opacity = 1;
+  if (gallery) { hud.style.opacity = 1; SFX.prayOn(false); }
   if (gallery) drawGallery(dt);
   else {
     // A blow that lands freezes the world for a moment.
@@ -745,12 +829,13 @@ function frame(now) {
 }
 
 const touch = MOBILE ? initTouch({ keys, hit, view, weapons: ['', ...WEAPON_IDS],
-  state: () => ({ mode: pl.mode, wid: pl.pending ?? pl.wid, st: pl.st, paused, gallery }) }) : null;
+  state: () => ({ mode: pl.mode, wid: pl.pending ?? pl.wid, st: pl.st, paused, gallery, map: CHART.isOpen(), door: pl.mode === 'ground' && WORLD.doorNear(pl.x, pl.y) >= 0 }) }) : null;
 resize();
+try { document.fonts.load('24px "Jacquard 24"'); document.fonts.load('16px "Pixelify Sans"'); } catch {}   // the place names need the old letters ready
 await bakeSet('');
 load.remove();
 const mem = () => { /* atlas pages, painted or downloaded */ const sets = new Set([...Object.values(SETS), ...Object.values(CLEAN), ...Object.values(ESETS)]); let b = 0; for (const s of sets) b += s.bytes; return Math.round(b / 1048576) + ' MB'; };
-window.__S = { MOBILE, setPause, hurtPriest, goreLevel, pl, SETS, ESETS, foes, progress, ANIMS, mem, spawn: id => { wantE = id; pendingSpawn.push(id); },
+window.__S = { MOBILE, MAP, WORLD, cam, screenOf: (x, y, z = 0) => { const [a, b] = toScreen(x, y, z); return [scr.ox + a, scr.oy + b]; }, setPause, hurtPriest, goreLevel, pl, SETS, ESETS, foes, progress, ANIMS, mem, spawn: id => { wantE = id; pendingSpawn.push(id); },
   setGallery: (on, i = 0, w = '', who = 0) => { gallery = on; gIdx = i; gWid = w; gWho = who; want = w || want; wantE = who ? ENEMY_IDS[who - 1] : wantE; gT = 0; resize(); } };
 requestAnimationFrame(frame);
 baker();

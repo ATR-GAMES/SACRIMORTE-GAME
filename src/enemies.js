@@ -2,9 +2,9 @@
 // the choirboy, the man nailed to his cross); his own come with him (the acolyte, the flagellant, the black bishop,
 // the goat, the imp). Each one: a look for fig.js, and idle / walk / atk / hurt / death in all eight facings.
 // Attack frame 3 is the hit.
-import { P_, mixP, gait } from './priest.js?v=96ed7b9';
-import { hash } from './raster.js?v=96ed7b9';
-import { bakeFig } from './fig.js?v=96ed7b9';
+import { P_, mixP, gait } from './priest.js?v=7fc74c5';
+import { hash } from './raster.js?v=7fc74c5';
+import { bakeFig } from './fig.js?v=7fc74c5';
 
 const { sin, cos, abs, max, min, PI } = Math, TAU = PI * 2;
 const jit = (i, k, a) => (hash(i * 7 + k * 13, k * 5 + 3) - .5) * 2 * (a || 0);

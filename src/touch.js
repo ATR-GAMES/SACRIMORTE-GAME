@@ -15,6 +15,8 @@ const ICON = {
   right: ['...#.....', '...##....', '...###...', '...####..', '...#####.', '...####..', '...###...', '...##....', '...#.....'],
   up: ['.........', '.........', '....#....', '...###...', '..#####..', '.#######.', '#########', '.........', '.........'],
   down: ['.........', '.........', '#########', '.#######.', '..#####..', '...###...', '....#....', '.........', '.........'],
+  use: ['..#####..', '.#.....#.', '.#.....#.', '.#.....#.', '.#...#.#.', '.#.....#.', '.#.....#.', '.#.....#.', '#########'],
+  map: ['.........', '##..##..#', '#.##..##.', '#..#...#.', '#..#...#.', '#..#...#.', '#..#...#.', '##.##.##.', '.........'],
   exit: ['#.......#', '.#.....#.', '..#...#..', '...#.#...', '....#....', '...#.#...', '..#...#..', '.#.....#.', '#.......#'],
   '': ['.........', '..####...', '.######..', '.#######.', '.#######.', '.######..', '..#####..', '...###...', '.........'],
   daga: ['........#', '.......#.', '......#..', '.....#...', '....#....', '..##.....', '..##.....', '.#.......', '#........'],
@@ -50,6 +52,8 @@ export function initTouch({ keys, hit, state, weapons, view }) {
       { id: 'crouch', code: 'KeyC', x: w - R(128), y: h - R(20), r: R(11) },
       { id: 'pause', code: 'Escape', x: w - R(16), y: R(16), r: R(11), sq: 1 },
       { id: 'wpn', x: w - R(44), y: R(16), r: R(11), sq: 1, wide: R(14) },
+      { id: 'map', code: 'KeyM', x: w - R(74), y: R(16), r: R(11), sq: 1 },
+      { id: 'use', code: 'KeyE', x: w - R(70), y: h - R(116), r: R(13), only: 'door' },
     ];
     const gy = h - R(20), gs = R(26);
     G = [['left', 'ArrowLeft'], ['right', 'ArrowRight'], ['up', 'ArrowUp'], ['down', 'ArrowDown'], ['exit', 'Tab']].map(([id, code], i) =>
@@ -80,8 +84,9 @@ export function initTouch({ keys, hit, state, weapons, view }) {
     const st = state(); if (st.paused) return;            // the pause menu takes its own taps
     goFull(); e.preventDefault();
     if (st.mode === 'dead' && !st.gallery) { hit.add('Enter'); return; }
+    if (st.map) { hit.add('KeyM'); return; }                // a tap anywhere closes the map
     const [x, y] = toView(e);
-    const b = find(st.gallery ? G : B, x, y);
+    const b = find(st.gallery ? G : B.filter(b => !b.only || st[b.only]), x, y);
     if (b) {
       if (b.id === 'wpn') { const cur = weapons.indexOf(st.wid), i = (cur + 1) % weapons.length; hit.add(i ? 'Digit' + i : 'Digit0'); }
       else { hit.add(b.code); if (b.hold) keys.add(b.code); }
@@ -126,7 +131,7 @@ export function initTouch({ keys, hit, state, weapons, view }) {
   function draw(g) {
     if (view.w !== lastW || view.h !== lastH) { lastW = view.w; lastH = view.h; layout(); }
     const st = state();
-    if (st.paused) return;
+    if (st.paused || st.map) return;
     if (st.gallery) { for (const b of G) button(g, b, b.id); return; }
     if (st.mode === 'dead') return;
     // The stick: where the thumb landed, or a faint hint of where it goes.
@@ -136,7 +141,7 @@ export function initTouch({ keys, hit, state, weapons, view }) {
     } else {
       g.globalAlpha = .45; disc(g, stickHome.x, stickHome.y, stickR, 'rgba(22,8,10,.25)', C.rim); disc(g, stickHome.x, stickHome.y, Math.round(stickR * .42), 'rgba(110,22,16,.5)', C.rimDark); g.globalAlpha = 1;
     }
-    for (const b of B) button(g, b, b.id === 'wpn' ? st.wid : b.id, (b.id === 'atk' && !st.wid) || ((b.id === 'roll' || b.id === 'cross') && st.st < 10));
+    for (const b of B) if (!b.only || st[b.only]) button(g, b, b.id === 'wpn' ? st.wid : b.id, (b.id === 'atk' && !st.wid) || ((b.id === 'roll' || b.id === 'cross') && st.st < 10));
   }
   layout();
   return { draw };
