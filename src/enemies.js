@@ -36,8 +36,13 @@ const K = (st, o) => {
   return Object.assign(P_({ ...stance(st, lunge, drop), lean, twist, head: head || [st.hp - lean * .4, -twist * .5, st.roll || 0], jaw: jaw ?? st.jaw ?? 0 }), x);
 };
 // Right-hand weapon keys: h, d per frame, with a smear on frames 3 and 4.
-const armed = (parts, keys, extra = {}) => keys.map((k, i) => ({ ...k.o, armIK: { [-1]: k.h, [1]: extra.left ? extra.left(k.h, k.d) : null },
-  weapon: { parts, d: k.d, e: k.e || [0, 0, -1], from: i === 3 || i === 4 ? { h: keys[i - 1].h, d: keys[i - 1].d } : null } }));
+const nrm3 = v => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+const armed = (parts, keys, extra = {}) => {
+  const a = nrm3(keys[2].d), b = nrm3(keys[4].d), sw = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const edge = d => { const n = nrm3(d), t = sw[0] * n[0] + sw[1] * n[1] + sw[2] * n[2], v = [sw[0] - n[0] * t, sw[1] - n[1] * t, sw[2] - n[2] * t]; return Math.hypot(...v) > .25 ? v : [0, 0, -1]; };
+  return keys.map((k, i) => ({ ...k.o, armIK: { [-1]: k.h, [1]: extra.left ? extra.left(k.h, k.d, i) : null },
+    weapon: { parts, d: k.d, e: k.e || edge(k.d), from: i === 3 || i === 4 ? { h: keys[i - 1].h, d: keys[i - 1].d } : null } }));
+};
 
 function human(st) {
   const ph = st.ph ?? 30, mod = (P, a, i) => st.mod ? st.mod(P, a, i) || P : P;
@@ -94,7 +99,23 @@ export const ENEMIES = {};
     { lunge: 1, drop: 1.5, lean: .85, armL: [.7, .25, .2], armR: [.75, .25, .2], head: [.4, 0, .1], jaw: .3 },
     { lunge: .3, lean: .45, armL: [.8, .2, .6], armR: [.8, .2, .6], jaw: .5 },
   ][i]) };
-  ENEMIES.poseido = { name: 'Poseído', speed: 34, hp: 3, range: 14,
+  A.atk2 = { n: 6, fps: 12, pose: i => K(st, [ // wild swipes, right then left
+    { lean: .3, twist: -.4, armR: [1.2, .9, .6], armL: [.4, .2, .5], jaw: .6 },
+    { lean: .25, twist: -.55, armR: [1.6, 1.2, .5], armL: [.4, .2, .5], jaw: 1 },
+    { lunge: .6, lean: .5, twist: .4, armR: [1.5, -.4, .3], armL: [1.4, 1.0, .5], jaw: 1 },
+    { lunge: .8, lean: .55, twist: -.3, armL: [1.5, -.3, .3], armR: [.8, -.3, .4], jaw: 1 },
+    { lunge: .8, lean: .55, twist: -.5, armL: [1.3, -.7, .3], armR: [.6, .3, .4], jaw: .6 },
+    { lunge: .3, lean: .4, armL: [.6, .2, .5], armR: [.6, .2, .5], jaw: .4 },
+  ][i]) };
+  A.atk3 = { n: 6, fps: 10, pose: i => K(st, [ // grabs you and bites
+    { lean: .3, armL: [1.3, .5, .4], armR: [1.3, .5, .4], jaw: .5 },
+    { lunge: .5, lean: .45, armL: [1.6, .25, .15], armR: [1.6, .25, .15], jaw: .8 },
+    { lunge: .7, lean: .2, armL: [1.4, .05, .9], armR: [1.4, .05, .9], head: [-.5, 0, .1], jaw: 1 },
+    { lunge: 1, lean: .8, armL: [1.3, .05, 1.1], armR: [1.3, .05, 1.1], head: [.6, 0, 0], jaw: 1 },
+    { lunge: 1, lean: .7, armL: [1.1, .1, .9], armR: [1.1, .1, .9], head: [.4, 0, .2], jaw: .4 },
+    { lunge: .3, lean: .4, armL: [.6, .2, .5], armR: [.6, .2, .5] },
+  ][i]) };
+  ENEMIES.poseido = { name: 'Poseído', speed: 34, hp: 3, range: 14, combos: [['atk2', 'atk'], ['atk', 'atk3'], ['atk2'], ['atk2', 'atk', 'atk3']],
     look: { skin: 'flesh', top: 'linen', stains: .25, pants: 'trousers', feet: 'boot', hair: 'wild', hairKey: 'darkhair', eyes: 'void', tears: 1, mouthBlood: 1, stubble: 1, veins: 1 }, anims: A };
 }
 
@@ -112,7 +133,25 @@ export const ENEMIES = {};
     { h: [6, -6, 4], d: [.6, 0, -.8], o: { lunge: .3, lean: .3, armL: [.4, .2, .5] } },
   ].map(k => ({ ...k, e: [1, 0, 0] })));
   A.atk = { n: 6, fps: 9, pose: i => K(st, keys[i]) };
-  ENEMIES.carnicero = { name: 'Carnicero', speed: 26, hp: 6, range: 18,
+  const keys2 = armed(CLEAVER, [ // across, from his right
+    { h: [3, -8, 4], d: [.6, -.1, -.8], o: { lean: .15, armL: [.6, .3, .8] } },
+    { h: [1, -13, 13], d: [-.6, -.7, .1], o: { twist: -.6, armL: [.8, .5, .6] } },
+    { h: [0, -13.5, 14], d: [-.75, -.6, .2], o: { twist: -.72, armL: [.9, .5, .5] } },
+    { h: [14, -2, 14], d: [.8, .55, 0], o: { lunge: .8, twist: .1, lean: .25, armL: [.5, .4, .6] } },
+    { h: [8, 9, 13], d: [-.1, 1, -.1], o: { lunge: .8, twist: .62, lean: .2, armL: [.4, .4, .6] } },
+    { h: [5, 0, 8], d: [.5, .3, -.8], o: { twist: .2, armL: [.5, .3, .7] } },
+  ]);
+  A.atk2 = { n: 6, fps: 9, pose: i => K(st, keys2[i]) };
+  const keys3 = armed(CLEAVER, [ // the left fist, all his weight behind it
+    { h: [3, -8, 4], d: [.6, -.1, -.8], o: { lean: .15, armL: [.4, .3, .9] } },
+    { h: [1, -8, 6], d: [.5, -.2, -.8], o: { lean: -.05, twist: .35, armL: [.2, .4, 1.8] } },
+    { h: [1, -8, 6], d: [.5, -.2, -.8], o: { lean: -.08, twist: .45, armL: [.1, .45, 2.0] } },
+    { h: [3, -8, 5], d: [.6, -.1, -.8], o: { lunge: 1, lean: .45, twist: -.35, armL: [1.55, -.05, .05] } },
+    { h: [3, -8, 5], d: [.6, -.1, -.8], o: { lunge: 1, lean: .45, twist: -.4, armL: [1.5, 0, .1] } },
+    { h: [3, -8, 4], d: [.6, -.1, -.8], o: { lunge: .3, lean: .2, armL: [.6, .3, .8] } },
+  ].map(k => ({ ...k, e: [1, 0, 0] })));
+  A.atk3 = { n: 6, fps: 10, pose: i => { const P = K(st, keys3[i]); P.weapon.from = null; return P; } };
+  ENEMIES.carnicero = { name: 'Carnicero', speed: 26, hp: 6, range: 18, combos: [['atk2', 'atk'], ['atk3', 'atk'], ['atk'], ['atk2', 'atk3']],
     look: { scale: 1.12, bw: 1.25, belly: 1.6, skin: 'skin', top: 'linen', stains: .2, sleeve: 'linen', forearm: 'skin', pants: 'trousers', feet: 'boot', hair: 'bald',
       stubble: 1, eyes: 'void', mouthBlood: 1, apron: 1, legW: 1.15, armW: 1.2 }, anims: A };
 }
@@ -147,7 +186,25 @@ export const ENEMIES = {};
       return P;
     } },
   };
-  ENEMIES.monja = { name: 'Monja reptante', speed: 42, hp: 3, range: 20,
+  A.atk2 = { n: 6, fps: 11, pose: i => { // a claw thrown sideways from all fours
+    const P = crawl(i === 5 ? .25 : 0);
+    if (i >= 1 && i <= 4) { P.jaw = 1; P.head = [-1.1, .2, .3]; }
+    if (i === 1) { P.lean = 1.0; P.pel[2] += 1.5; P.armIK[-1] = [12, -13, 10]; }
+    if (i === 2) { P.lean = .95; P.pel[2] += 2; P.armIK[-1] = [10, -15, 14]; }
+    if (i === 3) { P.lean = 1.2; P.pel[0] = 3; P.armIK[-1] = [21, 4, 5]; }
+    if (i === 4) { P.lean = 1.2; P.pel[0] = 3; P.armIK[-1] = [16, 10, 3]; }
+    return P;
+  } };
+  A.atk3 = { n: 6, fps: 9, pose: i => { // rears up screaming, then throws herself on you
+    const kn = { footL: [-12, .9, 2.2, 1.35], footR: [-12, .9, 2.2, 1.35], flare: 1.2 };
+    return [crawl(0),
+      P_({ pel: [-1, 0, 17], lean: .1, head: [-.5, 0, .6], jaw: 1, armL: [1.2, 1.3, .4], armR: [1.2, 1.3, .4], ...kn }),
+      P_({ pel: [-1.5, 0, 17.5], lean: 0, head: [-.75, 0, .7], jaw: 1, armL: [1.5, 1.5, .3], armR: [1.5, 1.5, .3], ...kn }),
+      P_({ pel: [6, 0, 15], lean: 1.1, head: [-.6, 0, .1], jaw: 1, armL: [1.6, .6, .2], armR: [1.6, .6, .2], ...kn, footL: [-9, .9, 2.2, 1.2], footR: [-9, .9, 2.2, 1.2] }),
+      P_({ pel: [7, 0, 14], lean: 1.2, head: [-.5, 0, .1], jaw: .5, armL: [1.4, .1, .6], armR: [1.4, .1, .6], ...kn, footL: [-8, .9, 2.2, 1.2], footR: [-8, .9, 2.2, 1.2] }),
+      crawl(.25)][i];
+  } };
+  ENEMIES.monja = { name: 'Monja reptante', speed: 42, hp: 3, range: 20, combos: [['atk2', 'atk2'], ['atk3'], ['atk2', 'atk'], ['atk']],
     look: { skin: 'flesh', top: 'habit', robe: { key: 'habit', len: .9, torn: 1, mud: 1 }, sleeve: 'habit', cuff: 1, gear: 'veil', gearKey: 'habit',
       eyes: 'ember', tears: 1, mouthBlood: 1, feet: 'bare', invcross: 'silver' }, anims: A };
 }
@@ -169,7 +226,25 @@ export const ENEMIES = {};
     { h: [8, -1, 4], d: [.2, 0, -1], o: { lunge: .4, lean: .25 } },
   ].map(k => ({ ...k, e: [1, 0, 0] })), { left: (h) => left(h) });
   A.atk = { n: 6, fps: 10, pose: i => K(st, keys[i]) };
-  ENEMIES.acolito = { name: 'Acólito', speed: 30, hp: 3, range: 16,
+  const keys2 = armed(RITUAL, [ // one-handed, a slash across the throat
+    { ...carry, o: {} },
+    { h: [1, -11, 12], d: [-.5, -.8, 0], o: { twist: -.55, armL: [.5, .3, .8] } },
+    { h: [0, -11.5, 12.5], d: [-.6, -.75, .1], o: { twist: -.65, armL: [.5, .3, .8] } },
+    { h: [13, -1, 12], d: [.85, .5, 0], o: { lunge: .8, twist: .1, lean: .25, armL: [.5, .3, .8] } },
+    { h: [7, 9, 11], d: [0, 1, 0], o: { lunge: .8, twist: .6, lean: .2, armL: [.5, .3, .8] } },
+    { ...carry, o: { twist: .1 } },
+  ], { left: (h, d, i) => i === 0 || i === 5 ? left(h) : null });
+  A.atk2 = { n: 6, fps: 11, pose: i => K(st, keys2[i]) };
+  const keys3 = armed(RITUAL, [ // two quick thrusts, both hands on the hilt
+    { ...carry, o: {} },
+    { h: [13, -2, 12], d: [1, 0, 0], o: { lunge: .5, lean: .3 } },
+    { h: [3, -3, 11], d: [.95, 0, .1], o: { lunge: .4, lean: .05 } },
+    { h: [15, -2, 12], d: [1, 0, -.05], o: { lunge: 1, lean: .45 } },
+    { h: [15, -2, 12], d: [1, 0, -.05], o: { lunge: 1, lean: .45 } },
+    { ...carry, o: {} },
+  ].map(k => ({ ...k, e: [0, 0, -1] })), { left: (h) => left(h) });
+  A.atk3 = { n: 6, fps: 12, pose: i => K(st, keys3[i]) };
+  ENEMIES.acolito = { name: 'Acólito', speed: 30, hp: 3, range: 16, combos: [['atk3'], ['atk2', 'atk'], ['atk3', 'atk2'], ['atk']],
     look: { skin: 'skin', top: 'crimson', robe: { key: 'crimson', len: .9, mud: 1 }, sleeve: 'crimson', cuff: 1, gear: 'hood', gearKey: 'crimson', eyes: 'ember',
       belt: 'rope', pentagram: 'gold', feet: 'bare' }, anims: A };
 }
@@ -193,7 +268,25 @@ export const ENEMIES = {};
     { h: [5, -6, 4], d: [.3, -.2, -1], o: { lunge: .3, lean: .3 } },
   ].map(k => ({ ...k, e: [0, 0, 1] })));
   A.atk = { n: 6, fps: 11, pose: i => K(st, keys[i]) };
-  ENEMIES.flagelante = { name: 'Flagelante', speed: 28, hp: 4, range: 22,
+  const keys2 = armed(SCOURGE, [ // a flat lash across
+    { h: [3, -7, 2], d: [.3, -.2, -1], o: { lean: .2 } },
+    { h: [0, -12, 13], d: [-.5, -.85, .1], o: { twist: -.6 } },
+    { h: [-1, -12.5, 13], d: [-.6, -.8, .15], o: { twist: -.7 } },
+    { h: [13, -1, 13], d: [.85, .5, 0], o: { lunge: .8, twist: .15, lean: .25 } },
+    { h: [6, 9, 12], d: [-.1, 1, -.1], o: { lunge: .8, twist: .6, lean: .2 } },
+    { h: [4, -3, 4], d: [.3, 0, -1], o: { twist: .15 } },
+  ].map(k => ({ ...k, e: [0, 0, 1] })));
+  A.atk2 = { n: 6, fps: 11, pose: i => K(st, keys2[i]) };
+  const keys3 = armed(SCOURGE, [ // from the ground up
+    { h: [3, -7, 2], d: [.3, -.2, -1], o: { lean: .2 } },
+    { h: [-2, -8, 0], d: [-.4, -.2, -1], o: { lean: .3, drop: 2 } },
+    { h: [-3, -8, -1], d: [-.5, -.1, -1], o: { lean: .35, drop: 2.5 } },
+    { h: [12, -3, 12], d: [.9, 0, .4], o: { lunge: .8, lean: .1 } },
+    { h: [6, -5, 22], d: [.2, -.1, 1], o: { lunge: .8, lean: -.15 } },
+    { h: [4, -6, 6], d: [.3, -.2, -.8], o: {} },
+  ].map(k => ({ ...k, e: [0, 0, 1] })));
+  A.atk3 = { n: 6, fps: 11, pose: i => K(st, keys3[i]) };
+  ENEMIES.flagelante = { name: 'Flagelante', speed: 28, hp: 4, range: 22, combos: [['atk2', 'atk3'], ['atk'], ['atk2', 'atk'], ['atk3', 'atk2']],
     look: { skin: 'skin', top: 'skin', wounds: 1, sleeve: 'skin', robe: { key: 'cassock', len: .9, torn: 1, blood: .12 }, gear: 'capirote', gearKey: 'hat', feet: 'bare', belt: 'rope' }, anims: A };
 }
 
@@ -209,7 +302,23 @@ export const ENEMIES = {};
     P_({ pel: [-.5, 0, 21], lean: .6, head: [-.4, 0, .2], armL: [.9, .4, .3], armR: [.9, .4, .3], footL: [3, .6, 2.6, 0], footR: [-1.5, .6, 2.6, .2], jaw: .6, flare: 1.4 }),
     P_({ pel: [0, 0, 28], lean: .15, head: [.1, 0, .4], armL: [.1, .1, .1], armR: [.1, .1, .1] }),
   ][i] };
-  ENEMIES.nino = { name: 'Niño del coro', speed: 38, hp: 2, range: 20,
+  A.atk2 = { n: 6, fps: 13, pose: i => [ // a flurry of scratches
+    P_({ pel: [0, 0, 29], lean: .3, head: [0, 0, .4], armL: [1.4, .4, 1.4], armR: [.9, .4, .7], jaw: .6 }),
+    P_({ pel: [1, 0, 28.5], lean: .45, head: [0, 0, .3], armL: [1.5, .2, .4], armR: [1.8, .4, 1.5], jaw: 1, footL: [3, .5, 2.6, 0] }),
+    P_({ pel: [1.5, 0, 28.5], lean: .5, head: [0, 0, .3], armL: [1.9, .4, 1.5], armR: [1.5, .2, .4], jaw: 1, footL: [3, .5, 2.6, 0] }),
+    P_({ pel: [2, 0, 28], lean: .6, head: [0, 0, .2], armL: [1.5, .15, .3], armR: [1.95, .4, 1.4], jaw: 1, footL: [4, .5, 2.6, 0], footR: [-2, .4, 2.6, .3] }),
+    P_({ pel: [1.5, 0, 28.5], lean: .55, head: [0, 0, .3], armL: [1.0, .3, .6], armR: [1.2, .3, .5], jaw: .5, footL: [3, .5, 2.6, 0] }),
+    P_({ pel: [0, 0, 29.5], lean: .15, head: [.1, 0, .4], armL: [.1, .1, .1], armR: [.1, .1, .1] }),
+  ][i] };
+  A.atk3 = { n: 6, fps: 10, pose: i => [ // low, then the teeth
+    P_({ pel: [0, 0, 22], lean: .5, head: [-.3, 0, .3], armL: [.3, .3, .4], armR: [.3, .3, .4], footL: [2.5, .6, 2.6, 0], footR: [-1, .6, 2.6, .2], flare: 1 }),
+    P_({ pel: [-.5, 0, 20], lean: .62, head: [-.5, 0, .2], armL: [-.3, .3, .4], armR: [-.3, .3, .4], footL: [2.5, .6, 2.6, 0], footR: [-1, .6, 2.6, .3], jaw: .6, flare: 1.2 }),
+    P_({ pel: [-.5, 0, 20], lean: .65, head: [-.6, 0, .2], armL: [-.4, .3, .4], armR: [-.4, .3, .4], footL: [2.5, .6, 2.6, 0], footR: [-1, .6, 2.6, .3], jaw: 1, flare: 1.2 }),
+    P_({ pel: [5, 0, 22], lean: 1.0, head: [-.8, 0, 0], armL: [-.4, .35, .3], armR: [-.4, .35, .3], footL: [6, .6, 2.6, 0], footR: [-4, .6, 2.6, .5], jaw: 1, flare: 1.5 }),
+    P_({ pel: [5, 0, 22], lean: .9, head: [-.6, 0, .1], armL: [.2, .3, .3], armR: [.2, .3, .3], footL: [6, .6, 2.6, 0], footR: [-4, .6, 2.6, .5], jaw: .2, flare: 1.5 }),
+    P_({ pel: [0, 0, 28], lean: .15, head: [.1, 0, .4], armL: [.1, .1, .1], armR: [.1, .1, .1] }),
+  ][i] };
+  ENEMIES.nino = { name: 'Niño del coro', speed: 38, hp: 2, range: 14, leap: 1, combos: [['atk2', 'atk3'], ['atk2'], ['atk3', 'atk2']],
     look: { scale: .66, headS: 1.32, skin: 'flesh', top: 'surplice', robe: { key: 'redcass', len: .9 }, over: { key: 'surplice', len: .5 }, sleeve: 'surplice', cuff: 1,
       hair: 'bowl', hairKey: 'brownhair', eyes: 'void', tears: 1, mouthBlood: 1, feet: 'boot' }, anims: A };
 }
@@ -229,7 +338,24 @@ export const ENEMIES = {};
     { lunge: .5, lean: .22, armR: [1.7, .25, .5], armL: [1.55, .05, .1], weapon: staff(), glow: 1.2 },
     { lean: .05, armR: [.4, .2, 1.0], armL: [.8, .2, 1.2], weapon: staff() },
   ][i]) };
-  ENEMIES.obispo = { name: 'Obispo negro', speed: 22, hp: 5, range: 120, ranged: true,
+  const swing = (d) => ({ parts: STAFF, d, e: [0, 1, 0] });
+  A.atk2 = { n: 6, fps: 10, pose: i => K(st, [ // the staff, swung like a club when you get too close
+    { armR: [.25, .2, 1.05], armL: [.55, .2, 1.4], weapon: staff() },
+    { twist: -.6, armR: [1.2, 1.0, .5], armL: [.6, .3, 1.2], weapon: swing([-.3, -.9, .3]) },
+    { twist: -.72, armR: [1.3, 1.1, .4], armL: [.6, .3, 1.2], weapon: swing([-.4, -.85, .35]) },
+    { lunge: .7, twist: .3, lean: .2, armR: [1.5, .2, .2], armL: [.5, .3, 1.0], weapon: swing([.9, .4, .15]) },
+    { lunge: .7, twist: .6, lean: .2, armR: [1.4, -.4, .3], armL: [.5, .3, 1.0], weapon: swing([.3, .95, .1]) },
+    { armR: [.4, .2, 1.0], armL: [.8, .2, 1.2], weapon: staff() },
+  ][i]) };
+  A.atk3 = { n: 6, fps: 7, pose: i => K(st, [ // both arms up: a spray of three
+    { armR: [.25, .2, 1.05], armL: [.55, .2, 1.4], weapon: staff() },
+    { lean: -.2, armR: [2.3, .3, .3], armL: [2.6, .5, .2], weapon: staff(), glow: 1.2, head: [-.3, 0, 0] },
+    { lean: -.25, armR: [2.4, .3, .25], armL: [2.75, .5, .15], weapon: staff(), glow: 2.2, head: [-.35, 0, 0] },
+    { lunge: .5, lean: .15, armR: [2.0, .3, .3], armL: [1.6, .6, .1], weapon: staff(), glow: 3 },
+    { lunge: .5, lean: .18, armR: [1.8, .3, .4], armL: [1.5, .5, .1], weapon: staff(), glow: 1 },
+    { lean: .05, armR: [.4, .2, 1.0], armL: [.8, .2, 1.2], weapon: staff() },
+  ][i]) };
+  ENEMIES.obispo = { name: 'Obispo negro', speed: 22, hp: 5, range: 16, ranged: true, combos: [['atk2'], ['atk2', 'atk2']],
     look: { scale: 1.1, skin: 'flesh', top: 'cassock', robe: { key: 'cassock', len: .9 }, mantle: 'redcass', chasuble: 'redcass', sleeve: 'cassock', cuff: 1,
       gear: 'mitre', gearKey: 'cassock', eyes: 'ember', hair: 'long', hairKey: 'hair', feet: 'boot' }, anims: A };
 }
@@ -246,7 +372,23 @@ export const ENEMIES = {};
     { lunge: 1, lean: .3, twist: .45, head: [.2, -.2, 0], armL: [1.6, .5, .3], armR: [2.3, .4, .3] },
     { lunge: .3, lean: .35, armL: [.5, .3, .5], armR: [.8, .3, .6] },
   ][i]) };
-  ENEMIES.cabrio = { name: 'Cabrío', speed: 30, hp: 8, range: 22,
+  A.atk2 = { n: 6, fps: 10, pose: i => K(st, [ // both claws, one after the other
+    { lean: .34, armL: [.3, .3, .5], armR: [.3, .3, .5] },
+    { lean: .3, twist: -.5, armR: [2.0, .8, .6], armL: [.4, .4, .5] },
+    { lunge: .6, lean: .5, twist: .4, armR: [1.5, -.3, .3], armL: [1.8, .8, .5] },
+    { lunge: .9, lean: .55, twist: -.4, armL: [1.5, -.3, .3], armR: [.8, .3, .4] },
+    { lunge: .9, lean: .5, twist: -.5, armL: [1.2, -.6, .3], armR: [.6, .3, .4] },
+    { lunge: .3, lean: .35, armL: [.4, .3, .5], armR: [.4, .3, .5] },
+  ][i]) };
+  A.atk3 = { n: 6, fps: 8, pose: i => K(st, [ // both fists brought down on the ground: it shakes
+    { lean: .3, armL: [.3, .3, .5], armR: [.3, .3, .5] },
+    { lean: -.2, head: [-.3, 0, 0], armL: [2.9, .3, .6], armR: [2.9, .3, .6], jaw: 1 },
+    { lean: -.25, head: [-.35, 0, 0], armL: [3.0, .25, .5], armR: [3.0, .25, .5], jaw: 1 },
+    { lunge: .8, drop: 4, lean: .9, head: [.5, 0, 0], armL: [1.3, .15, .1], armR: [1.3, .15, .1], jaw: .5 },
+    { lunge: .8, drop: 5, lean: 1.0, head: [.6, 0, 0], armL: [.9, .2, .1], armR: [.9, .2, .1] },
+    { lunge: .3, lean: .4, armL: [.4, .3, .5], armR: [.4, .3, .5] },
+  ][i]) };
+  ENEMIES.cabrio = { name: 'Cabrío', speed: 30, hp: 8, range: 22, combos: [['atk2', 'atk3'], ['atk'], ['atk2', 'atk'], ['atk3']], aoe: ['atk3'],
     look: { scale: 1.3, headKind: 'goat', skin: 'hide', top: 'hide', pants: 'hide', sleeve: 'hide', feet: 'hoof', claws: 1, bw: 1.15, legW: 1.2, armW: 1.25, pentagram: 'ember', tail: .5 }, anims: A };
 }
 
@@ -273,7 +415,16 @@ export const ENEMIES = {};
     ][i]);
     return st.mod(P) || P;
   } };
-  ENEMIES.crucificado = { name: 'Crucificado', speed: 18, hp: 7, range: 26,
+  A.atk2 = { n: 6, fps: 8, pose: i => { const P = K(st, [ // the other way round
+      { lean: .3 }, { lean: .25, twist: .8, head: [.2, -.5, .2] }, { lean: .22, twist: .95, head: [.1, -.6, .2] },
+      { lunge: .7, lean: .35, twist: -.55, head: [.1, .3, .2] }, { lunge: .8, lean: .35, twist: -1.0, head: [.2, .5, .3] }, { lunge: .3, lean: .3, twist: -.35 },
+    ][i]); st.mod(P); return P; } };
+  A.atk3 = { n: 6, fps: 8, pose: i => { // reared back, then the whole cross brought down in front of him
+    const P = K(st, [{ lean: .3 }, { lean: -.3, head: [-.3, 0, .2] }, { lean: -.42, head: [-.4, 0, .2] },
+      { lunge: 1, lean: 1.0, head: [.9, 0, .2] }, { lunge: 1, drop: 2, lean: 1.12, head: [1.0, 0, .2] }, { lunge: .3, lean: .5 }][i]);
+    st.mod(P); return P;
+  } };
+  ENEMIES.crucificado = { name: 'Crucificado', speed: 18, hp: 7, range: 22, combos: [['atk', 'atk2'], ['atk3'], ['atk2', 'atk', 'atk3']], aoe: ['atk', 'atk2'],
     look: { skin: 'flesh', top: 'flesh', wounds: 1, sleeve: 'flesh', pants: 'trousers', feet: 'bare', hair: 'long', hairKey: 'darkhair', eyes: 'void', tears: 1, mouthBlood: 1,
       cross: 1, nailed: 1, stubble: 1 }, anims: A };
 }
@@ -297,10 +448,19 @@ export const ENEMIES = {};
     P_({ pel: [0, 0, 17], lean: .7, head: [-.5, 0, 0], armL: [.5, .4, .3], armR: [.5, .4, .3], ...crouchF, flap: .7 }),
     P_({ pel: [0, 0, 21], lean: .45, head: [-.35, 0, 0], armL: [.6, .35, 1.0], armR: [.6, .35, 1.0], ...crouchF, flap: .4 }),
   ][i] };
-  ENEMIES.diablillo = { name: 'Diablillo', speed: 44, hp: 2, range: 16,
+  const base = (o) => P_({ pel: [0, 0, 21], lean: .45, head: [-.35, 0, 0], armL: [.6, .35, 1.0], armR: [.6, .35, 1.0], ...crouchF, flap: .4, ...o });
+  A.atk2 = { n: 6, fps: 12, pose: i => base([ // a slash, standing
+    {}, { armR: [2.2, .7, .4], flap: .8, jaw: .6 }, { armR: [2.4, .75, .4], flap: .9, jaw: 1, lean: .35 },
+    { armR: [1.3, -.4, .2], armL: [1.8, .6, .4], lean: .7, pel: [2, 0, 21], jaw: 1, flap: .3 }, { armL: [1.3, -.4, .2], armR: [.8, .3, .6], lean: .7, pel: [2, 0, 21], flap: .2 }, {},
+  ][i]) };
+  A.atk3 = { n: 6, fps: 11, pose: i => base([ // spins: wings and tail
+    {}, { twist: -.6, flap: 1, tailPh: 1 }, { twist: -.9, flap: 1, tailPh: 2 },
+    { twist: .8, flap: 0, tailPh: 4, lean: .55, jaw: 1 }, { twist: 1.2, flap: .5, tailPh: 5, lean: .5 }, { tailPh: 6 },
+  ][i]) };
+  ENEMIES.diablillo = { name: 'Diablillo', speed: 44, hp: 2, range: 14, leap: 1, combos: [['atk2', 'atk3'], ['atk2', 'atk2'], ['atk3']], aoe: ['atk3'],
     look: { scale: .62, headKind: 'imp', headS: 1.35, skin: 'imp', top: 'imp', pants: 'imp', sleeve: 'imp', feet: 'claw', claws: 1, wings: 1.1, tail: .9, eyes: 'ember', bw: .9 }, anims: A };
 }
 
 export const ENEMY_IDS = Object.keys(ENEMIES);
-export const ENEMY_ANIMS = ['idle', 'walk', 'atk', 'hurt', 'death'];
+export const ENEMY_ANIMS = ['idle', 'walk', 'atk', 'atk2', 'atk3', 'hurt', 'death'];
 export const bakeEnemy = (id, anim, f, k) => bakeFig(ENEMIES[id].anims[anim].pose(f), ENEMIES[id].look, k);

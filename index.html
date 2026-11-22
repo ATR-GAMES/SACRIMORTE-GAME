@@ -4,17 +4,63 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sacrimorte</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jacquard+24&family=Pixelify+Sans:wght@400;600&display=swap" rel="stylesheet">
 <style>
   html, body { margin: 0; height: 100%; background: #fff; overflow: hidden; }
   canvas { display: block; image-rendering: pixelated; }
   #hud { position: fixed; left: 12px; top: 10px; font: 12px/1.5 ui-monospace, Consolas, monospace; color: #5a5258; pointer-events: none; }
   #hud b { color: #1c1820; }
+  #hud { transition: opacity .6s; }
+  /* the death screen */
+  #death { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+    pointer-events: none; color: #c8b89a; font-family: 'Pixelify Sans', monospace; -webkit-font-smoothing: none; font-smooth: never; font-variant-ligatures: none; text-shadow: 2px 2px 0 #000; }
+  #death > * { opacity: 0; transform: translateY(8px); transition: opacity 1.4s ease, transform 1.4s ease; }
+  #death.on > * { opacity: 1; transform: none; }
+  #death.on > :nth-child(2) { transition-delay: .2s; } #death.on > :nth-child(3) { transition-delay: .9s; }
+  #death.on > :nth-child(4) { transition-delay: 1.3s; } #death.on > :nth-child(5) { transition-delay: 1.6s; }
+  #death.on > :nth-child(6) { transition-delay: 1.9s; } #death.on > :nth-child(7) { transition-delay: 2.3s; }
+  .d-cross { font-size: 30px; color: #5a0c0c; margin-bottom: -6px; }
+  .d-title { font-family: 'Jacquard 24', monospace; font-size: clamp(80px, 13vw, 168px); color: #a3150f; line-height: .9;
+    text-shadow: 0 6px 0 #140103; letter-spacing: .02em; }
+  .d-latin { font-style: italic; font-size: clamp(17px, 2.2vw, 26px); color: #d6c6a6; margin-top: 18px; }
+  .d-es { font-size: clamp(13px, 1.4vw, 16px); color: #8a7a68; margin-top: 4px; }
+  .d-es small { color: #5e5246; }
+  .d-rule { width: min(420px, 70vw); margin: 22px 0 16px; color: #5a1010; display: flex; align-items: center; gap: 12px; font-size: 14px; }
+  .d-rule::before, .d-rule::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, #5a1a14, transparent); }
+  .d-by { font-size: clamp(14px, 1.5vw, 18px); color: #a89880; }
+  .d-by b { color: #c8301e; font-weight: normal; font-style: italic; }
+  .d-stats { display: flex; gap: clamp(20px, 4vw, 48px); margin-top: 16px; }
+  .d-stats div { display: flex; flex-direction: column; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: #6e6254; }
+  .d-stats b { font-size: clamp(22px, 2.6vw, 30px); color: #d8c8a8; font-weight: normal; letter-spacing: 0; text-transform: none; }
+  .d-rise { margin-top: 34px; font-size: 15px; letter-spacing: .35em; text-transform: uppercase; color: #e2d2b6; }
+  .d-rise span { border: 1px solid #5a2a20; padding: 3px 9px; margin: 0 4px; letter-spacing: 0; color: #d8b090; }
+  #death.ready .d-rise { animation: rise 2.2s ease-in-out infinite; }
+  @keyframes rise { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+  /* the pause menu */
+  #pause { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+    font-family: 'Pixelify Sans', monospace; -webkit-font-smoothing: none; font-smooth: never; font-variant-ligatures: none; color: #c8b89a; text-shadow: 2px 2px 0 #000; user-select: none; }
+  #pause.on { display: flex; animation: pfade .35s ease; }
+  @keyframes pfade { from { opacity: 0; } to { opacity: 1; } }
+  #pause .p-title { font-family: 'Jacquard 24', monospace; font-size: clamp(72px, 11vw, 144px); color: #a3150f; line-height: .9;
+    text-shadow: 0 6px 0 #140103; margin-bottom: 30px; }
+  #pause .p-item { font-size: clamp(18px, 2vw, 24px); letter-spacing: .08em; text-transform: uppercase; color: #8a7a68; padding: 6px 26px; cursor: pointer; position: relative; transition: color .15s; }
+  #pause .p-item.sel { color: #ecdcc0; }
+  #pause .p-item.sel::before, #pause .p-item.sel::after { content: '✠'; position: absolute; top: 50%; transform: translateY(-50%); font-size: .6em; color: #a3150f; }
+  #pause .p-item.sel::before { left: 0; } #pause .p-item.sel::after { right: 0; }
+  #pause .p-keys { display: grid; grid-template-columns: auto auto; gap: 7px 26px; text-align: left; font-size: clamp(14px, 1.5vw, 17px); margin-bottom: 26px; }
+  #pause .p-keys b { color: #d8b090; font-weight: normal; text-align: right; white-space: nowrap; }
+  #pause .p-keys span { color: #a89880; }
+  #pause .p-hint { margin-top: 22px; font-size: 13px; color: #5e5246; letter-spacing: .1em; }
   #load { position: fixed; inset: 0; display: grid; place-items: center; font: 14px ui-monospace, Consolas, monospace; color: #5a5258; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="hud"></div>
+<div id="death"></div>
+<div id="pause"></div>
 <div id="load">pintando al padre…</div>
 <script type="module" src="src/main.js"></script>
 </body>
