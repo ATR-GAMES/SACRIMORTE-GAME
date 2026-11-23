@@ -2,9 +2,9 @@
 // the choirboy, the man nailed to his cross); his own come with him (the acolyte, the flagellant, the black bishop,
 // the goat, the imp). Each one: a look for fig.js, and idle / walk / atk / hurt / death in all eight facings.
 // Attack frame 3 is the hit.
-import { P_, mixP, gait } from './priest.js?v=7fc74c5';
-import { hash } from './raster.js?v=7fc74c5';
-import { bakeFig } from './fig.js?v=7fc74c5';
+import { P_, mixP, gait } from './priest.js?v=78777f9';
+import { hash } from './raster.js?v=78777f9';
+import { bakeFig, bakeFigBox } from './fig.js?v=78777f9';
 
 const { sin, cos, abs, max, min, PI } = Math, TAU = PI * 2;
 const jit = (i, k, a) => (hash(i * 7 + k * 13, k * 5 + 3) - .5) * 2 * (a || 0);
@@ -460,6 +460,54 @@ export const ENEMIES = {};
   ENEMIES.diablillo = { name: 'Diablillo', speed: 44, hp: 2, range: 14, leap: 1, combos: [['atk2', 'atk3'], ['atk2', 'atk2'], ['atk3']], aoe: ['atk3'],
     look: { scale: .62, headKind: 'imp', headS: 1.35, skin: 'imp', top: 'imp', pants: 'imp', sleeve: 'imp', feet: 'claw', claws: 1, wings: 1.1, tail: .9, eyes: 'ember', bw: .9 }, anims: A };
 }
+
+// 0. La poseída: a woman from the pews, her shawl still on her head.
+{
+  const st = { ph: 29.4, hunch: .32, hp: .3, roll: -.4, jerk: .22, stride: 7.5, lift: 3, armsFwd: [.6, .2, .5], jaw: .4 };
+  const A = human(st);
+  A.atk = ENEMIES.poseido.anims.atk; A.atk2 = ENEMIES.poseido.anims.atk2; A.atk3 = ENEMIES.poseido.anims.atk3;
+  ENEMIES.poseida = { name: 'Poseída', speed: 36, hp: 3, range: 14, combos: ENEMIES.poseido.combos,
+    look: { skin: 'flesh', top: 'habit', robe: { key: 'habit', len: .95 }, sleeve: 'habit', gear: 'veil', gearKey: 'darkhair', eyes: 'void', tears: 1, mouthBlood: 1, veins: 1, bw: .9 }, anims: A };
+}
+
+// ---------------------------------------------------------------- the faithful (the night begins with them at prayer)
+// Looks without the possession; each turns into its possessed kind. sit: sitting in a pew, hands joined; stand: up,
+// shaking, as the curse takes them.
+const SIT = (o = {}) => P_({ pel: [-2.4, 0, 15.5], lean: .16, head: [.3, 0, 0], footL: [6.6, .5, 2.6, 0], footR: [6.4, -.2, 2.6, 0],
+  armL: [.35, -.34, 2.0], armR: [.35, -.34, 2.0], flare: 1.2, flareFwd: 1, ...o });
+export const FAITHFUL = [
+  { into: 'poseido', look: { skin: 'flesh', top: 'linen', pants: 'trousers', feet: 'boot', hair: 'wild', hairKey: 'darkhair', eyes: 'white', stubble: 1 } },
+  { into: 'poseida', look: { skin: 'flesh', top: 'habit', robe: { key: 'habit', len: .95 }, sleeve: 'habit', gear: 'veil', gearKey: 'darkhair', eyes: 'white', bw: .9 } },
+  { into: 'poseido', look: { skin: 'flesh', top: 'apron', pants: 'trousers', feet: 'boot', hair: 'wild', hairKey: 'brownhair', eyes: 'white' } },
+  { into: 'poseida', look: { skin: 'flesh', top: 'redcass', robe: { key: 'redcass', len: .95 }, sleeve: 'redcass', gear: 'veil', gearKey: 'habit', eyes: 'white', bw: .9 } },
+];
+export const FAITHFUL_ANIMS = {
+  sit: { n: 2, fps: 1.5, pose: i => SIT({ head: [.3 + .05 * i, 0, 0] }) },
+  look: { n: 1, fps: 1, pose: () => SIT({ head: [-.25, 0, 0], lean: .05 }) },         // looking up at the window
+  // terrified: thrown back in the pew, arms up against what they see, shaking
+  fear: { n: 2, fps: 9, pose: i => SIT({ lean: -.25 + .04 * i, head: [-.4 + .05 * i, jit(i, 9, .2), jit(i, 8, .2)], armL: [1.7 + .1 * i, .55, 1.5], armR: [1.9 - .1 * i, .5, 1.4], jaw: .7 }) },
+  stand: { n: 4, fps: 10, pose: i => P_({ pel: [0, 0, 29.4], lean: .35 + .1 * (i & 1), head: [.4 + jit(i, 1, .3), jit(i, 2, .4), jit(i, 3, .5)],
+    armL: [.3 + .4 * (i & 1), .5, .3], armR: [.5 - .3 * (i & 1), .5, .4], footL: [1, .5, 2.6, 0], footR: [-1, .4, 2.6, 0], jaw: .5 + .5 * (i & 1) }) },
+};
+export const bakeFaithful = (n, anim, f, k, possessed) => bakeFig(FAITHFUL_ANIMS[anim].pose(f), possessed ? { ...FAITHFUL[n].look, eyes: 'void', tears: 1, veins: 1 } : FAITHFUL[n].look, k);
+
+// ---------------------------------------------------------------- the demon who comes through the window
+// Tall and thin, ash-grey, long curving horns, torn wings, eyes like coals, a black robe in rags.
+export const DEMON = {
+  box: [320, 340, 160, 300],                                                          // its sprite: width, height, the feet
+  look: { scale: 2.5, headKind: 'imp', headS: 1.12, skin: 'flesh', top: 'habit', robe: { key: 'habit', len: 1, torn: 1 }, sleeve: 'habit', feet: 'claw', claws: 1,
+    wings: 1.45, eyes: 'ember', bw: .78, armW: .8, legW: .8, horns: 'small' },
+  anims: {
+    hover: { n: 4, fps: 5, pose: i => P_({ pel: [0, 0, 30], lean: .05, head: [.05, 0, 0], armL: [.3, .55, .2], armR: [.3, .55, .2], footL: [.5, .4, 1, .6], footR: [-.5, .4, .5, .7],
+      flap: .2 + .8 * Math.abs(Math.sin(i / 4 * TAU)), flare: 1.2 }) },
+    curse: { n: 4, fps: 6, pose: i => P_({ pel: [0, 0, 30], lean: -.2, head: [-.35, 0, 0], armL: [2.8, .9, .3], armR: [2.8, .9, .3], footL: [1, .4, 2.6, 0], footR: [-1, .4, 2.6, 0],
+      flap: .9 + .1 * (i & 1), jaw: .5 + .5 * (i & 1), flare: 1.6 }) },
+    stand: { n: 2, fps: 2, pose: i => P_({ pel: [0, 0, 30], lean: .2, head: [.25, 0, 0], armL: [.4, .4, .6], armR: [.4, .4, .6], footL: [2, .4, 2.6, 0], footR: [-2, .4, 2.6, 0], flap: .55 + .05 * i, flare: 1 }) },
+    speak: { n: 2, fps: 4, pose: i => P_({ pel: [0, 0, 30], lean: .1, head: [.15, 0, 0], armL: [.6, .4, .8], armR: [1.4, .1, .9], footL: [1, .4, 2.6, 0], footR: [-1, .4, 2.6, 0],
+      flap: .4, jaw: i ? .7 : .1, flare: .9 }) },
+  },
+};
+export const bakeDemon = (anim, f, k) => bakeFigBox(DEMON.anims[anim].pose(f), DEMON.look, k, ...DEMON.box);
 
 export const ENEMY_IDS = Object.keys(ENEMIES);
 export const ENEMY_ANIMS = ['idle', 'walk', 'atk', 'atk2', 'atk3', 'hurt', 'death'];

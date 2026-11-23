@@ -1,7 +1,7 @@
 // Which sound engine plays the game: the synthesized voices (src/sound.js, the default), the retro one (src/retro.js), or none.
 // Both answer the same calls; this passes each call to the one chosen. The choice is remembered.
-import * as OLD from './sound.js?v=7fc74c5';
-import * as RETRO from './retro.js?v=7fc74c5';
+import * as OLD from './sound.js?v=78777f9';
+import * as RETRO from './retro.js?v=78777f9';
 
 const MODES = ['anterior', 'retro', 'no'];
 let mode = 'anterior';

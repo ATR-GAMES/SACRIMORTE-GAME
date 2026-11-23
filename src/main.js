@@ -1,17 +1,18 @@
 // The priest in the Cathedral of Our Lady of the Souls (src/cathedral.js), against the demon's ten, with health, stamina, five weapons, the
 // roll, prayer and the crucifix, and a great deal of blood. Plus a gallery of every animation in all eight facings.
-import { ANIMS, bake, animsFor, animInfo, OX, OY } from './priest.js?v=7fc74c5';
-import { WEAPONS, WEAPON_IDS } from './weapons.js?v=7fc74c5';
-import { toScreen } from './raster.js?v=7fc74c5';
-import { ENEMIES, ENEMY_IDS, ENEMY_ANIMS, bakeEnemy } from './enemies.js?v=7fc74c5';
-import { Sheet, loadPacked } from './atlas.js?v=7fc74c5';
-import { initTouch } from './touch.js?v=7fc74c5';
-import { MOBILE, PERF } from './device.js?v=7fc74c5';
-import * as SFX from './sfx.js?v=7fc74c5';
-import { K as GK, V as GV } from './view.js?v=7fc74c5';
-import { build as buildCathedral } from './cathedral.js?v=7fc74c5';
-import { makeWorld } from './world.js?v=7fc74c5';
-import { createMap } from './map.js?v=7fc74c5';
+import { ANIMS, bake, animsFor, animInfo, OX, OY, CINE, bakeCine } from './priest.js?v=78777f9';
+import { WEAPONS, WEAPON_IDS } from './weapons.js?v=78777f9';
+import { toScreen } from './raster.js?v=78777f9';
+import { ENEMIES, ENEMY_IDS, ENEMY_ANIMS, bakeEnemy, bakeFaithful, bakeDemon, DEMON } from './enemies.js?v=78777f9';
+import { createIntro } from './intro.js?v=78777f9';
+import { Sheet, loadPacked } from './atlas.js?v=78777f9';
+import { initTouch } from './touch.js?v=78777f9';
+import { MOBILE, PERF } from './device.js?v=78777f9';
+import * as SFX from './sfx.js?v=78777f9';
+import { K as GK, V as GV } from './view.js?v=78777f9';
+import { build as buildCathedral } from './cathedral.js?v=78777f9';
+import { makeWorld } from './world.js?v=78777f9';
+import { createMap } from './map.js?v=78777f9';
 
 // The map, and what draws it and keeps everyone out of its walls.
 // Statues are the game's own figures carved in pale stone: a saint holding up the cross, a hooded virgin, a kneeling monk.
@@ -43,6 +44,7 @@ const fkey = (a, k, f) => a + '|' + k + '|' + f;
 // ---------------------------------------------------------------- tuning
 // Weapons: damage per blow, reach, how wide the cut is (the cosine of its half-angle), stamina, knockback.
 const WSTAT = {
+  cruz:       { dmg: 1.4, reach: 32, cone: .25, stam: 11, knock: 8 },
   daga:       { dmg: 1.0, reach: 28, cone: .35, stam: 9,  knock: 3 },
   machete:    { dmg: 1.6, reach: 33, cone: .2,  stam: 13, knock: 6 },
   hacha:      { dmg: 2.8, reach: 38, cone: .15, stam: 20, knock: 10 },
@@ -52,6 +54,7 @@ const WSTAT = {
 // Enemies: health, damage, how hard to stagger (a blow must do at least this), demonic (the crucifix burns them).
 const ESTAT = {
   poseido:     { hp: 4,   dmg: 7,  poise: 0,   demon: 0 },
+  poseida:     { hp: 3.5, dmg: 6,  poise: 0,   demon: 0 },
   carnicero:   { hp: 10,  dmg: 16, poise: 2.4, demon: 0 },
   monja:       { hp: 4,   dmg: 9, poise: 0,   demon: 0 },
   acolito:     { hp: 5,   dmg: 10, poise: 0,   demon: 1 },
@@ -121,11 +124,12 @@ function goreTick() {
   goreBusy = !!(goreJob || nextRow(sh, lvl));
 }
 // Everything not needed at boot is painted in the background; whatever is asked for jumps the queue.
-let want = null, wantE = null;
+let want = 'cruz', wantE = null;
+const needE = [];                                     // enemy sprites that must be ready soon (the faithful's possessed forms)
 async function baker() {
   const queue = [...WEAPON_IDS.map(w => ['w', w]), ...ENEMY_IDS.map(e => ['e', e])];
   while (queue.length) {
-    const need = pendingSpawn.find(id => !ESETS[id]) || (wantE && !ESETS[wantE] ? wantE : null);
+    const need = pendingSpawn.find(id => !ESETS[id]) || needE.find(id => !ESETS[id]) || (wantE && !ESETS[wantE] ? wantE : null);
     let i = need ? queue.findIndex(q => q[0] === 'e' && q[1] === need) : -1;
     if (i < 0 && want && !SETS[want]) i = queue.findIndex(q => q[0] === 'w' && q[1] === want);
     // On a phone nothing is painted ahead of time: only what has been asked for.
@@ -150,9 +154,28 @@ const down = (...c) => c.some(k => keys.has(k)), pressed = c => hit.has(c);
 
 // ---------------------------------------------------------------- the priest
 const WALK = 52, RUN = 118, CROUCH = 24, ROLL = 200, JUMPV = 235, G = 1150;
-const pl = { x: MAP.start[0], y: MAP.start[1], z: 0, vz: 0, k: MAP.startK, mode: 'ground', anim: 'idle', t: 0, timer: 0, vx: 0, vy: 0, kx: 0, ky: 0, crouch: false, wid: '', pending: null,
+const pl = { x: MAP.start[0], y: MAP.start[1], z: 0, vz: 0, k: MAP.startK, mode: 'ground', anim: 'idle', t: 0, timer: 0, vx: 0, vy: 0, kx: 0, ky: 0, crouch: false, wid: '', pending: 'cruz',
   gore: 0, hp: HP, st: ST, stT: 0, flash: 0, stats: { kills: 0, wounds: 0, t0: performance.now() }, deathT: 0 };
 const dust = [];
+// ---------------------------------------------------------------- the night begins (src/intro.js)
+const figCache = new Map();
+function figCanvas(key, make) {
+  let c = figCache.get(key); if (c) return c;
+  const s = make(); c = document.createElement('canvas'); c.width = s.w; c.height = s.h;
+  c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(s.d.buffer.slice(0)), s.w, s.h), 0, 0); figCache.set(key, c); return c;
+}
+const NO_INTRO = new URLSearchParams(location.search).has('sinintro') || new URLSearchParams(location.search).has('clip');
+if (MOBILE) MAP.congregation = MAP.congregation.filter((p, n) => n % 2 === 0 || p.y < 40);   // a lighter crowd on a phone
+const INTRO = createIntro({ MAP, WORLD, SFX, pl, FOX: OX, FOY: OY, mobile: MOBILE, demonAnims: DEMON.anims, cine: CINE,
+  cineSprite: (n, f, k) => figCanvas(['c', n, f, k].join(), () => bakeCine(n, f, k)),
+  faithSprite: (n, a, f, k, poss) => figCanvas(['f', n, a, f, k, poss].join(), () => bakeFaithful(n, a, f, k, poss)),
+  demonSprite: (a, f, k) => figCanvas(['d', a, f, k].join(), () => bakeDemon(a, f, k)),
+  shake: v => { shake = Math.max(shake, v); },
+  ready: () => needE.every(id => ESETS[id]),
+  possess: list => possess(list) });
+needE.push(...INTRO.startNeeds());
+if (NO_INTRO) INTRO.skip();
+const introLoad = INTRO.preload();   // painted a little each frame while the title is up
 const info = a => animInfo(a, pl.wid);
 const setAnim = (a) => { if (pl.anim !== a) { pl.anim = a; pl.t = 0; } };
 const frameOf = () => { const A = info(pl.anim), f = Math.floor(pl.t * (pl.fps || A.fps || 8)); return A.loop ? f % A.n : Math.min(A.n - 1, f); };
@@ -207,7 +230,7 @@ const EPITAPHS = [
   ['Requiem aeternam dona eis, Domine.', 'Dales, Señor, el descanso eterno.', 'Misa de difuntos'],
   ['Ubi est, mors, victoria tua?', '¿Dónde está, oh muerte, tu victoria?', '1 Corintios 15, 55'],
 ];
-const KILLER = { poseido: 'un poseído', carnicero: 'el carnicero', monja: 'la monja reptante', acolito: 'un acólito', flagelante: 'un flagelante',
+const KILLER = { poseida: 'una poseída', poseido: 'un poseído', carnicero: 'el carnicero', monja: 'la monja reptante', acolito: 'un acólito', flagelante: 'un flagelante',
   nino: 'el niño del coro', obispo: 'el fuego del obispo negro', cabrio: 'el cabrío', crucificado: 'el crucificado', diablillo: 'un diablillo' };
 const ash = [];
 let epi = 0;
@@ -225,6 +248,15 @@ function revive() {
 }
 
 function update(dt) {
+  if (INTRO.active) {
+    for (const t0 = performance.now(); performance.now() - t0 < 8;) { const n = introLoad.next(); if (n.done) break; n.value(); }
+    INTRO.update(dt); pl.t += dt; setAnim('idle'); pl.fps = 0;
+    if (pl.pending !== null && SETS[pl.pending]) { pl.wid = pl.pending; pl.pending = null; }
+    WORLD.tick(dt); updateBlood(dt);
+    cam.x += (INTRO.cam.x - cam.x) * Math.min(1, dt * 4); cam.y += (INTRO.cam.y - cam.y) * Math.min(1, dt * 4);
+    place.t = 99; return;
+  }
+  INTRO.update(dt);
   pl.t += dt;
   pickWeapon();
   if (pl.pending !== null && SETS[pl.pending] && pl.mode !== 'atk') {
@@ -424,6 +456,12 @@ function spawnFoe(id) {
     side: Math.random() < .5 ? 1 : -1, flash: 0, barT: 0, kx: 0, ky: 0, seed: Math.random() * 100 });
   SFX.summon(panOf(foes[foes.length - 1]), id);
 }
+// The faithful, turned: each where it sat, and every one of them comes for him.
+function possess(list) {
+  list.sort((a, b) => Math.hypot(a.x - pl.x, a.y - pl.y) - Math.hypot(b.x - pl.x, b.y - pl.y));
+  list.forEach((p, n) => foes.push({ id: p.id, x: p.x, y: p.y, k: 6, anim: 'idle', t: Math.random(), hp: ESTAT[p.id].hp, fps: 0, dead: 0, cool: 1 + Math.random() * 1.5,
+    side: Math.random() < .5 ? 1 : -1, flash: 0, barT: 0, kx: 0, ky: 0, seed: Math.random() * 100 }));
+}
 // The priest's blow, landing on frame 3 of every swing.
 function priestBlow() {
   const s = WSTAT[pl.wid], fd = dirOf(pl.k), mult = pl.blow === 3 ? 1.5 : 1;
@@ -471,6 +509,10 @@ function updateFoes(dt) {
     f.x += f.kx * dt; f.y += f.ky * dt; f.kx *= Math.exp(-dt * 8); f.ky *= Math.exp(-dt * 8);
     const E = ENEMIES[f.id], S = ESTAT[f.id], sc = E.look.scale || 1, dx = pl.x - f.x, dy = pl.y - f.y, d = Math.hypot(dx, dy) || 1;
     if (!alive(f)) { if (eDone(f)) f.dead += dt; continue; }
+    if (f.dormant) {                                                                    // twitching where it stands, until he comes
+      if (d < 95 || f.hp < S.hp || pl.mode === 'dead' && false) { f.dormant = false; f.cool = .3; SFX.cry(f.id, 'atk', panOf(f)); }
+      else { f.k = octOf(dx, dy); eSet(f, 'idle'); f.fps = 7; continue; }
+    }
     f.cowed = false;
     if (crossUp && d < 85 && (-dx * cd[0] - dy * cd[1]) / d > .45) {
       f.cowed = true; SFX.cry(f.id, 'cow', panOf(f)); f.x -= dx / d * 34 * dt; f.y -= dy / d * 34 * dt; f.combo = null; f.charge = null;
@@ -549,9 +591,10 @@ function updateFoes(dt) {
     if (sp) { walkAnim(f, sp); f.k = octOf(mx, my); } else { eSet(f, 'idle'); f.fps = 0; }
   }
   // Keep them out of each other and out of the priest.
+  const others = [...foes, pl];
   for (const a of foes) {
-    if (!alive(a)) continue;
-    for (const b of [...foes, pl]) {
+    if (!alive(a) || a.dormant) continue;                                               // the still ones keep their place
+    for (const b of others) {
       if (a === b || (b !== pl && !alive(b))) continue;
       const dx = a.x - b.x, dy = a.y - b.y, d = Math.hypot(dx, dy);
       const m = b === pl ? sepOf(a) : 9 * ((ENEMIES[a.id].look.scale || 1) + (ENEMIES[b.id].look.scale || 1));
@@ -580,9 +623,13 @@ function updateFoes(dt) {
 const view = { w: 400, h: 225, s: 3 }, cam = { x: MAP.start[0], y: MAP.start[1] }, look = { x: 0, y: 0 }, place = { name: '', t: 99 };
 const panOf = o => Math.max(-1, Math.min(1, ((o.x - o.y) - (cam.x - cam.y)) * Math.SQRT1_2 / (view.w / 2) * .85));
 let gallery = false, gIdx = 0, gT = 0, gWid = '', gWho = 0;
+// The usual scale: close in, the way Diablo's camera sits over its hero. The cinematic's wide shots pull back to the hall.
+let wideShot = false;
+const baseScale = () => Math.max(2, Math.floor(Math.min(innerWidth / 680, innerHeight / 380)));
 function resize() {
   const W = innerWidth, H = innerHeight;
-  view.s = gallery ? Math.max(1, Math.floor(Math.min(W / 560, H / 290))) : Math.max(2, Math.floor(Math.min(W / 440, H / 248)))   // close in, the way Diablo's camera sits over its hero;
+  // The cinematic's wide shots pull back to half the scale: a whole number, so every pixel stays a clean square.
+  view.s = gallery ? Math.max(1, Math.floor(Math.min(W / 560, H / 290))) : baseScale();   // the cinematic uses the same camera as the game
   view.w = Math.ceil(W / view.s); view.h = Math.ceil(H / view.s);
   cv.width = view.w; cv.height = view.h; cv.style.width = view.w * view.s + 'px'; cv.style.height = view.h * view.s + 'px';
   ctx.imageSmoothingEnabled = false;
@@ -601,11 +648,16 @@ const bar = (x, y, w, h, v, fg, bg = '#2a2228') => { ctx.fillStyle = bg; ctx.fil
 
 function drawPlay() {
   ctx.fillStyle = '#0b090a'; ctx.fillRect(0, 0, view.w, view.h);
+  // The cinematic's wide shots draw the world smaller (Z < 1), so the whole hall fits on the same canvas.
+  // (the cinematic's wide shots use a smaller whole-number scale instead: see resize)
+  const Z = 1, VW = view.w, VH = view.h;
+  ctx.save();
   // ox, oy: where the map's origin lands on screen, so the camera's spot is in the middle (a little low: he stands, the view is above).
   const sk = shake > 0 ? 2 : 0, [csx, csy] = toScreen(cam.x, cam.y, 0);
-  const ox = Math.round(view.w / 2 - csx) + (sk ? Math.round(rnd(-sk, sk)) : 0), oy = Math.round(view.h / 2 + 18 - csy) + (sk ? Math.round(rnd(-sk, sk)) : 0);
+  const ox = Math.round(VW / 2 - csx) + (sk ? Math.round(rnd(-sk, sk)) : 0), oy = Math.round(VH / 2 + 18 - csy) + (sk ? Math.round(rnd(-sk, sk)) : 0);
   scr.ox = ox; scr.oy = oy;
-  WORLD.drawFloor(ctx, ox, oy, view.w, view.h);
+  WORLD.focus(pl.x, pl.y);
+  WORLD.drawFloor(ctx, ox, oy, VW, VH, INTRO.active ? 6 : 2);
   for (const p of pools) if (p.t > 0 && !p.done) {
     if (!p.cv || p.r - p.cr >= .8) {
       const R = Math.ceil(p.r * (1 + p.el)) + 4; p.cv = p.cv || document.createElement('canvas'); p.cv.width = R * 2 + 1; p.cv.height = Math.ceil(R * GK * 2.6) + 4;
@@ -625,11 +677,13 @@ function drawPlay() {
   const lying = pl.anim === 'death' && frameOf() >= 7, f = pl.frame ?? frameOf();
   const list = [{ d: pl.x + pl.y, draw: () => {
     shadow(ox + gx, oy + gy, Math.max(6, (lying ? 20 : 12) - hz * .12), Math.max(3, (5 - hz * .05) * GK * 2), Math.max(.08, .22 - hz * .004));
-    drawS(SETS[pl.wid], pl.anim, pl.k, f, ox + gx, oy + gy - hz * GV);
+    const cp = INTRO.priestPose();
+    if (cp) { const c = figCanvas(['c', cp.name, cp.f, cp.k].join(), () => bakeCine(cp.name, cp.f, cp.k)); ctx.drawImage(c, Math.round(ox + gx - OX), Math.round(oy + gy - OY)); }
+    else drawS(SETS[pl.wid], pl.anim, pl.k, f, ox + gx, oy + gy - hz * GV);
     if (pl.flash > 0) glow(() => drawS(SETS[pl.wid], pl.anim, pl.k, f, ox + gx, oy + gy - hz * GV), .75);
     ctx.globalAlpha = 1;
   } }];
-  for (const e of foes) list.push({ d: e.x + e.y - (!alive(e) && eDone(e) ? 40 : 0), draw: () => {
+  for (const e of foes) if (WORLD.shownAt(e.x, e.y)) list.push({ d: e.x + e.y - (!alive(e) && eDone(e) ? 40 : 0), draw: () => {
     const [sx, sy0] = toScreen(e.x, e.y, 0), sy = sy0 - WORLD.heightAt(e.x, e.y), sc = ENEMIES[e.id].look.scale || 1;
     ctx.globalAlpha = e.dead > 28 ? Math.max(0, 1 - (e.dead - 28) / 2) : 1;
     shadow(ox + sx, oy + sy, Math.round(12 * sc), Math.max(3, Math.round(5 * sc * GK * 2)), .2);
@@ -639,7 +693,7 @@ function drawPlay() {
     ctx.globalAlpha = 1;
     if (alive(e) && e.barT > 0 && !CLIP) bar(Math.round(ox + sx - 9), Math.round(oy + sy - 64 * sc), 18, 2, e.hp / ESTAT[e.id].hp, '#b8261c');
   } });
-  list.push(...WORLD.blocks(ox, oy, view.w, view.h, ox + gx, oy + gy - 24, pl.x + pl.y, pl.x, pl.y));
+  list.push(...WORLD.blocks(ox, oy, VW, VH, INTRO.active ? -1e5 : ox + gx, oy + gy - 24, pl.x + pl.y, pl.x, pl.y), ...INTRO.drawables(ox, oy));
   list.sort((p, q) => p.d - q.d).forEach(o => o.draw(ctx));
   for (const d of drops) {
     const up = WORLD.heightAt(d.x, d.y), [sx, sy] = toScreen(d.x, d.y, d.z).map((v, n) => n ? v - up : v), [tx, ty] = toScreen(d.x - d.vx * .02, d.y - d.vy * .02, d.z - d.vz * .02).map((v, n) => n ? v - up : v);
@@ -654,13 +708,16 @@ function drawPlay() {
     ctx.fillStyle = fl ? '#ffc050' : '#d0380e'; ctx.fillRect(Math.round(ox + sx - 1), Math.round(oy + sy - 2), 3, 3);
   }
   // The dark: candles, moonlight through the windows, his own small light, fire, the crucifix.
-  const dyn = [{ x: pl.x, y: pl.y, z: 26 + WORLD.heightAt(pl.x, pl.y) / GV, col: [150, 140, 128], r: 60 }];
+  INTRO.drawFx(ctx, ox, oy);
+  const dyn = [{ x: pl.x, y: pl.y, z: 26 + WORLD.heightAt(pl.x, pl.y) / GV, col: [150, 140, 128], r: 60 }, ...INTRO.lights()];
   for (const b of bolts) dyn.push({ x: b.x, y: b.y, z: b.z, col: [255, 120, 40], r: 34, flicker: 1 });
   if (pl.mode === 'cross' && pl.t * 8 >= 2) dyn.push({ x: pl.x, y: pl.y, z: 40, col: [240, 210, 130], r: 70, flicker: 2 });
-  WORLD.lightUp(ctx, ox, oy, view.w, view.h, dyn, performance.now() / 1000);
+  WORLD.lightUp(ctx, ox, oy, VW, VH, dyn, performance.now() / 1000, { noFog: Z < 1 });
+  ctx.restore();
   // The edges of the view sink into black.
   const vg = ctx.createRadialGradient(view.w / 2, view.h / 2, view.h * .42, view.w / 2, view.h / 2, view.w * .62);
   vg.addColorStop(0, 'rgba(4,2,6,0)'); vg.addColorStop(1, 'rgba(4,2,6,.62)'); ctx.fillStyle = vg; ctx.fillRect(0, 0, view.w, view.h);
+  { const k = baseScale() / view.s; ctx.save(); ctx.scale(k, k); INTRO.overlay(ctx, view.w / k, view.h / k); ctx.restore(); }
   // The name of the place he has walked into: comes up in the old red letters, stays a moment, goes.
   if (place.t < 4.2 && place.name) {
     const a = place.t < .6 ? place.t / .6 : place.t > 3.2 ? Math.max(0, (4.2 - place.t)) : 1;
@@ -686,7 +743,7 @@ function drawPlay() {
   if (low > .55 && pl.mode !== 'dead' && !CLIP) { const a = (low - .55) * (.9 + .3 * Math.sin(performance.now() / 160)); const g = ctx.createRadialGradient(view.w / 2, view.h / 2, view.h * .35, view.w / 2, view.h / 2, view.w * .7); g.addColorStop(0, 'rgba(120,0,0,0)'); g.addColorStop(1, `rgba(120,0,0,${a})`); ctx.fillStyle = g; ctx.fillRect(0, 0, view.w, view.h); }
   const bx = 8, by = MOBILE ? 8 : view.h - 16;
   if (pl.mode === 'dead') drawDeath(ox + gx, oy + gy);
-  else if (!CLIP) { bar(bx, by, 90, 4, pl.hp / HP, '#b8261c'); bar(bx, by + 6, 90, 2, pl.st / ST, pl.tired > 0 ? '#e0a020' : '#8a8490'); }
+  else if (!CLIP && !INTRO.active) { bar(bx, by, 90, 4, pl.hp / HP, '#b8261c'); bar(bx, by + 6, 90, 2, pl.st / ST, pl.tired > 0 ? '#e0a020' : '#8a8490'); }
   if (hud.style.opacity !== '0') hud.style.opacity = 0;
   if (touch) touch.draw(ctx);
 }
@@ -801,6 +858,12 @@ let last = performance.now();
 function frame(now) {
   let dt = Math.min(.05, (now - last) / 1000); last = now;
   if (paused) { pauseInput(); hit.clear(); if (paused) { drawPlay(); drawPauseVeil(); } requestAnimationFrame(frame); last = performance.now(); return; }
+  if (wideShot !== (INTRO.active && INTRO.cam.wide)) { wideShot = INTRO.active && INTRO.cam.wide; resize(); }
+  if (INTRO.active && !gallery) {
+    if (pressed('Escape') || pressed('Enter') || pressed('Space') || pressed('NumpadEnter')) INTRO.skip();
+    if (hitStop > 0) hitStop = 0; shake = Math.max(0, shake - dt);
+    update(dt); drawPlay(); hit.clear(); requestAnimationFrame(frame); return;
+  }
   // The map: the world holds still under it.
   if (CHART.isOpen()) {
     if (pressed('KeyM') || pressed('Escape') || pressed('KeyP') || pressed('Tab')) CHART.setOpen(false);
@@ -835,7 +898,7 @@ try { document.fonts.load('24px "Jacquard 24"'); document.fonts.load('16px "Pixe
 await bakeSet('');
 load.remove();
 const mem = () => { /* atlas pages, painted or downloaded */ const sets = new Set([...Object.values(SETS), ...Object.values(CLEAN), ...Object.values(ESETS)]); let b = 0; for (const s of sets) b += s.bytes; return Math.round(b / 1048576) + ' MB'; };
-window.__S = { MOBILE, MAP, WORLD, cam, screenOf: (x, y, z = 0) => { const [a, b] = toScreen(x, y, z); return [scr.ox + a, scr.oy + b]; }, setPause, hurtPriest, goreLevel, pl, SETS, ESETS, foes, progress, ANIMS, mem, spawn: id => { wantE = id; pendingSpawn.push(id); },
+window.__S = { MOBILE, MAP, WORLD, INTRO, cam, screenOf: (x, y, z = 0) => { const [a, b] = toScreen(x, y, z); return [scr.ox + a, scr.oy + b]; }, setPause, hurtPriest, goreLevel, pl, SETS, ESETS, foes, progress, ANIMS, mem, spawn: id => { wantE = id; pendingSpawn.push(id); },
   setGallery: (on, i = 0, w = '', who = 0) => { gallery = on; gIdx = i; gWid = w; gWho = who; want = w || want; wantE = who ? ENEMY_IDS[who - 1] : wantE; gT = 0; resize(); } };
 requestAnimationFrame(frame);
 baker();

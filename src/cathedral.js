@@ -6,7 +6,7 @@
 // to the street.
 // One cell is about a metre. x runs west → east, y north → south. Floors stand at levels (one step = STEP_PX on
 // screen): the street at 0, the church and terrace at 2, the dais at 5, the library and organ loft upstairs at 8.
-import { footprint } from './props.js?v=7fc74c5';
+import { footprint } from './props.js?v=78777f9';
 
 export const CELL = 20 * Math.SQRT2;            // world units per cell
 export const NAME = 'Catedral de Nuestra Señora de las Ánimas';
@@ -114,8 +114,8 @@ export function build() {
   prop('vase', 41, 14); prop('vase', 49, 14); prop('lectern', 42, 19);
   prop('grate', 36, 19);
   prop('chandelier2', 44, 21); prop('chandelier2', 44, 31);
-  // the nave: thirteen rows of pews either side of the runner, a pulpit, chandeliers
-  for (let y = 25; y <= 61; y += 3) { prop('pew', 37, y); prop('pew', 47, y); }
+  // the nave: seven rows of pews either side of the runner, a pulpit, chandeliers
+  for (let y = 25; y <= 43; y += 3) { prop('pew', 37, y); prop('pew', 47, y); }
   prop('pulpit', 54, 22);
   for (const y of [42, 53, 63]) prop('chandelier2', 44, y);
   for (const y of [40, 52]) { prop('votives', 34, y, 1); prop('pedestal', 55, y); }
@@ -124,7 +124,7 @@ export function build() {
   prop('stairs', 28, 67); prop('crate', 26, 73); prop('barrel', 27, 73); prop('stairs', 58, 67); prop('crate', 63, 73); prop('chest', 62, 73);
 
   // ---------------------------------------------------------------- west: the study, the library upstairs
-  for (const y of [22, 23, 24, 25]) { prop('parapet', 19, y); prop('parapet', 24, y); }    // balustrades either side of the stair
+  for (const y of [22, 23, 24, 25]) { prop('parapet', 19, y, 1); prop('parapet', 24, y, 1); }    // balustrades either side of the stair
   prop('desk', 15, 26); prop('chair', 16, 27, 2); prop('desk', 15, 31); prop('chair', 16, 32, 2);
   prop('bookshelf', 27, 22); prop('bookshelf', 30, 22); prop('chest', 31, 33); prop('chest', 29, 33); prop('candelabrum', 26, 29);
   prop('pedestal', 14, 22); prop('globe', 28, 29);
@@ -135,7 +135,7 @@ export function build() {
   prop('lectern', 22, 9); prop('candelabrum', 22, 13); prop('candelabrum', 31, 12); prop('chandelier', 22, 17); prop('rug', 20, 11);
 
   // ---------------------------------------------------------------- east: the sacristy, the organ loft upstairs, the chapel, the stores
-  for (const y of [22, 23, 24, 25]) { prop('parapet', 63, y); prop('parapet', 68, y); }
+  for (const y of [22, 23, 24, 25]) { prop('parapet', 63, y, 1); prop('parapet', 68, y, 1); }
   prop('wardrobe', 57, 22); prop('wardrobe', 59, 22); prop('wardrobe', 69, 22); prop('wardrobe', 71, 22);
   prop('table', 59, 29); prop('chair', 60, 28, 0); prop('chair', 62, 28, 0); prop('chair', 61, 30, 2); prop('chair', 63, 30, 2);
   prop('chest', 70, 32); prop('chest', 71, 30); prop('kneeler', 57, 33); prop('candelabrum', 70, 27);
@@ -187,9 +187,19 @@ export function build() {
   zone('Atrio', 18, 75, 73, 90, { at: [45, 79], w: .3 });
   framed('Calle de los Penitentes', 30, 90, 61, 97, .4);
 
+  // ---------------------------------------------------------------- the faithful at the midnight vigil
+  // Most seats of the pews taken: [x, y] in cells (the middle of the seat), n: which of the faithful (src/enemies.js).
+  const congregation = [];
+  { let sd = 7; const rnd = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    for (let y = 25; y <= 43; y += 3) for (const x0 of [37, 47]) for (let i = 0; i < 6; i++) {
+      if (rnd() < .6) congregation.push({ x: x0 + i + .5 + OX, y: y + .42 + OY, n: rnd() * 4 | 0 });
+    } }
+  // Where the demon comes in and where he stands.
+  const windowAt = [45 + OX, 5 + OY + 1], demonAt = [45 + OX, 16 + OY];
+
   // A little variety per floor cell: worn slabs, tombs set into the floor.
   for (let k = 0; k < W * H; k++) if (!block[k]) vari[k] = (Math.imul(k, 2654435761) >>> 27);
-  return { name: NAME, W, H, OX, OY, floor, block, vari, pi, props, skipped, zones, doors, level,
+  return { congregation, windowAt, demonAt, name: NAME, W, H, OX, OY, floor, block, vari, pi, props, skipped, zones, doors, level,
     start: [(44.5 + OX + .5) * CELL, (8 + OY + .6) * CELL], startK: 2,      // behind the altar, facing the people
     crossing: [45 + OX, 44 + OY] };
 }

@@ -1,8 +1,8 @@
 // Every sound in the game, made on the spot with Web Audio: no files. Blows, flesh, bone, the cries of the ten,
 // the priest's breath, groans and steps, fire. Only what the characters do: no music, no ambience.
 // The browser only lets sound start after a key or a touch, so the context is born on the first one.
-import { synth, utter } from './voice.js?v=7fc74c5';
-import { BEINGS } from './beings.js?v=7fc74c5';
+import { synth, utter } from './voice.js?v=78777f9';
+import { BEINGS } from './beings.js?v=78777f9';
 let ac = null, bus, dry, noiseBuf, brownBuf, enabled = true, testing = false, live = 0;
 try { enabled = localStorage.getItem('sacrimorte_sonido') !== '0'; } catch {}
 const last = {}, waiting = new Set();
@@ -70,6 +70,7 @@ function tone(o) {
 // f: pitch of the air it cuts; len: length of the swing; w: weight; thrust: a short straight push instead of an arc;
 // tines: the fork goes in with several points.
 const BLOW = {
+  cruz: [{ k: 'blunt', f: 900, len: .18, w: 1 }, { k: 'blunt', f: 950, len: .2, w: .95 }, { k: 'blunt', f: 800, len: .22, w: 1.15 }],
   daga: [
     { k: 'stab', f: 2200, len: .1, w: .55 },                   // puñalada
     { k: 'slash', f: 2600, len: .12, w: .5 },                  // tajo de revés

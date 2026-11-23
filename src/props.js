@@ -10,7 +10,7 @@
 // A thing several cells wide is drawn cell by cell (each cell a sprite sorted with the characters).
 // Rotation: 0 as defined (the front looks south, +y), 1 front west, 2 front north, 3 front east.
 
-import { GY, DH, ZS, thinUp } from './view.js?v=7fc74c5';
+import { GY, DH, ZS, thinUp } from './view.js?v=78777f9';
 
 const clamp8 = v => v < 0 ? 0 : v > 255 ? 255 : v | 0;
 const hash = (a, b, c = 0) => { let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(c | 0, 1440662683); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
@@ -243,7 +243,7 @@ function hits(shapes, px, py, top, all) {
   for (const s of shapes) {
     let lo, hi, f, nx = 0, ny = 0;
     if (s[0] === 'C') {
-      const [, cx, cy, r0, z0, z1, , r1] = s, k = (r1 - r0) / ((z1 - z0) || 1), c0 = r0 - k * z0, a = u0 - cx, b = v0 - cy;
+      const [, cx, cy, r0_, z0, z1, m_, r1_] = s, thin = m_ === 'flame' ? 0 : .06, r0 = Math.max(thin, r0_), r1 = Math.max(thin * .5, r1_), k = (r1 - r0) / ((z1 - z0) || 1), c0 = r0 - k * z0, a = u0 - cx, b = v0 - cy;
       const qa = 2 / (S * S) - k * k, qb = 2 * (a + b) / S - 2 * c0 * k, qc = a * a + b * b - c0 * c0;
       if (qa <= 0) continue;
       const disc = qb * qb - 4 * qa * qc; if (disc < 0) continue;

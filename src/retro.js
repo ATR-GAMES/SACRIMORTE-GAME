@@ -70,6 +70,7 @@ const lo = { crush: 16000, bits: 8 }, lofi = { crush: 11025, bits: 6 };
 // ---------------------------------------------------------------- weapons
 // k: stab, slash, chop, blunt, ram; p: pitch of the weapon (small blades high, heavy low); len: swing length.
 const BLOW = {
+  cruz:       [['blunt', .9, 1.1], ['blunt', .95, 1.15], ['blunt', .85, 1.2]],
   daga:       [['stab', 1.5, .8], ['slash', 1.6, .85], ['stab', 1.4, .7]],
   machete:    [['slash', 1.2, 1], ['slash', 1.1, 1.05], ['chop', 1.1, 1.05]],
   hacha:      [['chop', .75, 1.3], ['slash', .8, 1.35], ['chop', .75, 1.25]],
@@ -191,6 +192,7 @@ export function sizzle(pan) {
 // p: pitch; w: wave; v: vibrato rate; demon: a second voice an octave down, ring-modulated and crushed;
 // hiss / bleat / chirp: their own colour.
 const FOE = {
+  poseida:     { p: 320, w: 'saw', v: 12, demon: .4, wob: 1 },
   poseido:     { p: 200, w: 'saw', v: 14, demon: .45, wob: 1 },
   carnicero:   { p: 120, w: 'square', v: 9, demon: .7 },
   monja:       { p: 330, w: 'saw', v: 7, demon: .4, hiss: 1 },

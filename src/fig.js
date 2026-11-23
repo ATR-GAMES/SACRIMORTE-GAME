@@ -1,8 +1,8 @@
 // Generic figure builder for the enemies. Same skeleton and renderer as the priest (IK legs, FK or IK arms, sliced
 // skirts), but everything he wears is described by a "look": skin, clothes, head (human, goat, imp), headgear
 // (hood, veil, capirote, mitre), and extras (wings, tail, horns, a cross nailed to the arms, brands on the chest).
-import { renderSprite, hash, M } from './raster.js?v=7fc74c5';
-import { RAMPS, ik, legAt } from './priest.js?v=7fc74c5';
+import { renderSprite, hash, M } from './raster.js?v=78777f9';
+import { RAMPS, ik, legAt } from './priest.js?v=78777f9';
 
 const { sin, cos, sqrt, PI, abs, max, min, atan2, hypot, ceil } = Math;
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -347,6 +347,7 @@ const TAU5 = PI * 2 / 5;
 const crossMat = (q0, q1, q2) => { M.tone = (hash(((q0 + 2) * 9) | 0, ((q1 + 2) * 2) | 0) - .5) * .25; };
 
 export const FSW = 144, FSH = 136, FOX = 72, FOY = 96;
+export function bakeFigBox(P, L, k, W, H, ox, oy) { const { prims, decals } = buildFig(P, L, k * PI / 4); return renderSprite(prims, decals, FRAMPS, W, H, ox, oy); }
 export function bakeFig(P, L, k) {
   const { prims, decals } = buildFig(P, L, k * PI / 4);
   return renderSprite(prims, decals, FRAMPS, FSW, FSH, FOX, FOY);

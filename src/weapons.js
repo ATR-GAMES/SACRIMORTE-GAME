@@ -3,7 +3,7 @@
 // blows. Blow keyframes live in the upper-body frame (u forward, l left, w up, origin at the pelvis):
 //   h = right hand, d = where the weapon points, plus body: lean, twist (+ turns to his left), lunge 0..1, drop (pelvis).
 // Frame 3 is the hit; frames 3 and 4 draw a smear behind the blade.
-import { M, hash } from './raster.js?v=7fc74c5';
+import { M, hash } from './raster.js?v=78777f9';
 
 const steelMat = (q0, q1) => {
   if (q0 > .35 && hash((q0 * 5) | 0, (q1 * 3 + 9) | 0) > .72) M.key = 'blood';
@@ -18,6 +18,24 @@ const waxMat = (q0, q1, q2) => { if (q0 < -.2 && hash((q1 * 4 + 5) | 0, (q2 * 4)
 // part: [along X, off Y, off Z, rx, ry, rz, ramp, mat, blade?]
 const W = (o) => o;
 export const WEAPONS = {
+  // The crucifix from the altar: a heavy wooden cross gripped by the foot of its long arm, swung like a club.
+  cruz: W({ name: 'cruz de madera', two: false, fps: 12, grip2: 0, edge: [0, 0, -1],
+    parts: [
+      [-1.2, 0, 0, 2.2, .95, .95, 'wood', haftMat], [7.5, 0, 0, 7.6, 1.1, 1.0, 'wood', haftMat, 1],
+      [11.6, 0, 0, 1.15, 5.4, 1.0, 'wood', haftMat, 1], [15.6, 0, 0, 1.4, 1.1, 1.0, 'wood', haftMat, 1], [11.6, 0, .9, .9, .9, .25, 'iron', ironMat, 1],
+    ],
+    carry: { h: [3.5, -7, -.5], d: [.65, -.12, -.75], e: [1, 0, .3] },
+    blows: [
+      { name: 'golpe de cruz', keys: [
+        { h: [3.5, -7, -.5], d: [.65, -.12, -.75] }, { h: [-1, -8.5, 21], d: [-.45, -.4, .8], twist: -.4 }, { h: [-1.5, -8.5, 22.5], d: [-.6, -.35, .7], twist: -.5, lean: -.05 },
+        { h: [13, -2, 15], d: [.9, .3, -.1], twist: .1, lean: .3, lunge: 1 }, { h: [9, 4, 6], d: [.2, .6, -.8], twist: .45, lean: .35, lunge: 1, drop: 1.5 }, { h: [4, -4, 7], d: [.6, 0, -.8], twist: .1, lean: .1, lunge: .3 }] },
+      { name: 'revés', keys: [
+        { h: [3.5, -7, -.5], d: [.65, -.12, -.75] }, { h: [1.5, -12, 13], d: [-.6, -.7, .1], twist: -.6 }, { h: [.5, -12.5, 14], d: [-.75, -.6, .2], twist: -.72 },
+        { h: [14, -2, 14], d: [.8, .55, 0], twist: .1, lean: .2, lunge: .8 }, { h: [8, 9, 13], d: [-.1, 1, -.1], twist: .62, lean: .15, lunge: .8 }, { h: [5, 0, 9], d: [.5, .3, -.8], twist: .2 }] },
+      { name: 'castigo', keys: [ // brought down from over the head
+        { h: [3.5, -7, -.5], d: [.65, -.12, -.75] }, { h: [1, -5, 24], d: [-.5, 0, .85], lean: -.1 }, { h: [0, -5, 25], d: [-.75, 0, .6], lean: -.15 },
+        { h: [12.5, -3, 16], d: [1, 0, .05], lean: .35, lunge: 1 }, { h: [12, -3, 5.5], d: [.4, 0, -1], lean: .55, lunge: 1, drop: 3 }, { h: [6, -5, 7], d: [.6, 0, -.8], lean: .2, lunge: .4 }] },
+    ] }),
   daga: W({ name: 'puñal', two: false, fps: 16, grip2: 0, edge: [0, 0, -1],
     parts: [
       [-3.6, 0, 0, .9, 1, 1, 'iron', ironMat], [-1.4, 0, 0, 2.2, .85, .85, 'wood', haftMat], [1.1, 0, 0, .6, 2.4, .85, 'iron', ironMat],

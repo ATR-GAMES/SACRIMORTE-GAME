@@ -3,7 +3,7 @@
 // places are named, and he is the red mark, pointing where he faces. Unexplored parts can be kept dark (SHOW_ALL).
 // (The flat ink plan it used to be is still here, drawBase, unused.)
 // Drawn on a canvas of its own at the screen's full resolution, so lines and letters stay crisp.
-import { F, B, CELL } from './cathedral.js?v=7fc74c5';
+import { F, B, CELL } from './cathedral.js?v=78777f9';
 
 const FLOOR = {
   [F.STONE]: [72, 66, 66], [F.AISLE]: [64, 58, 62], [F.CARPET]: [98, 26, 30], [F.MARBLE]: [94, 88, 86], [F.MOSAIC]: [104, 82, 50],

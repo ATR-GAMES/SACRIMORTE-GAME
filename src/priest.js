@@ -3,8 +3,8 @@
 // one bandaged, bloodied hand. He is built from ellipsoids on a small skeleton (IK legs, FK arms), posed per frame and
 // handed to the raster to become pixels. Every one of the eight facings is drawn for real (none mirrored), so the
 // bandaged hand and the rosary always stay on his left.
-import { renderSprite, hash, M } from './raster.js?v=7fc74c5';
-import { WEAPONS } from './weapons.js?v=7fc74c5';
+import { renderSprite, hash, M } from './raster.js?v=78777f9';
+import { WEAPONS } from './weapons.js?v=78777f9';
 
 const { sin, cos, sqrt, PI, abs, max, min, atan2, hypot, ceil } = Math;
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -423,6 +423,23 @@ export const ANIMS = {
 // ---------------------------------------------------------------- baking
 export const SW = 144, SH = 136, OX = 72, OY = 96;
 // Facing k (0..7) is the world angle k·45°. k=1 looks straight down the screen.
+// Poses for the night's opening (src/intro.js), baked on their own, never part of the playable sets.
+// fall: thrown back by the blast onto the floor; cower: sitting there, an arm up against what he sees; rise: back up.
+const SITF = { pel: [-3.5, 0, 9.5], lean: -.55, footL: [10, .9, 2.6, 0], footR: [7, -.4, 4, .5], armL: [-1.1, .5, .25], armR: [-1.0, .5, .3], flare: 2, flareFwd: 2.5, ground: true };
+export const CINE = {
+  fall: { n: 3, fps: 7, pose: i => [
+    P_({ pel: [-2, 0, 28.5], lean: -.5, head: [-.55, 0, 0], armL: [1.5, .7, .9], armR: [1.6, .6, 1.0], footR: [-5, .3, 2.6, 0], drag: -3 }),
+    P_({ pel: [-4, 0, 20], lean: -.7, head: [-.4, 0, 0], armL: [.6, .9, .4], armR: [.7, .9, .4], footL: [5, .4, 7, .5], footR: [-2, .3, 2.6, 0], drag: -4, flare: 1.5 }),
+    P_({ ...SITF, head: [-.3, 0, 0] }),
+  ][i] },
+  cower: { n: 2, fps: 7, pose: i => P_({ ...SITF, lean: -.42 + .03 * i, head: [-.32 + .04 * i, .05 * i, 0], armR: [2.0, .15, 1.8], armL: [-1.0, .5, .25] }) },
+  rise: { n: 3, fps: 5, pose: i => [
+    P_({ ...SITF, lean: .2, pel: [-1, 0, 12], head: [.2, 0, 0], armL: [.6, .4, .4], armR: [.6, .4, .4] }),
+    P_({ pel: [-1, 0, 16.5], lean: .2, head: [.4, 0, 0], footL: [6.5, .3, 2.6, 0], footR: [-12, .2, 2.0, 1.35], armL: [.3, .3, .3], armR: [.5, .2, .4] }),
+    P_({ pel: [0, 0, 29], lean: .15, head: [.1, 0, 0] }),
+  ][i] },
+};
+export function bakeCine(name, f, k) { const { prims, decals } = build(CINE[name].pose(f), k * PI / 4); return renderSprite(prims, decals, RAMPS, SW, SH, OX, OY); }
 export function bake(anim, frame, k, wid, gore = 0) {
   GORE = gore;
   const P = poseFor(anim, frame, wid), { prims, decals } = build(P, k * PI / 4);
