@@ -3,9 +3,9 @@
 // A timeline of shots and events. main.js hands in what it needs (env) and asks, each frame: how wide the shot is and
 // where it looks, what to draw in the world (the faithful, the demon, the priest's own poses, flying glass), what lights
 // there are, and what goes over the screen (black bars, titles, words). Esc, Enter or Space skips it.
-import { toScreen } from './view.js?v=78777f9';
-import { CELL } from './cathedral.js?v=78777f9';
-import { FAITHFUL, DEMON } from './enemies.js?v=78777f9';
+import { toScreen } from './view.js?v=f76c404';
+import { CELL } from './cathedral.js?v=f76c404';
+import { FAITHFUL, DEMON } from './enemies.js?v=f76c404';
 
 const GLASS = [[118, 56, 168], [156, 70, 172], [196, 64, 86], [220, 164, 72], [66, 82, 176], [180, 40, 60], [230, 220, 240]];
 const ease = t => t < 0 ? 0 : t > 1 ? 1 : t * t * (3 - 2 * t);

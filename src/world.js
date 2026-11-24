@@ -10,9 +10,11 @@
 // - collision: circles against the solid cells.
 // Screen space here is the map's own (no camera): corner (i, j) of a cell sits at (20(i−j), GY(i+j)) — see src/view.js.
 // Interior walls in front of the room the priest is in are cut down to a stub, the way Diablo shows a room.
-import { CELL, F, B, OUTDOOR } from './cathedral.js?v=78777f9';
-import { PROPS, propCell, propLights, propFlames, renderShapes } from './props.js?v=78777f9';
-import { GY, DH, V, ZS, STEP_PX, toScreen, fadeUp, thinUp } from './view.js?v=78777f9';
+import { CELL, F, B, OUTDOOR } from './cathedral.js?v=f76c404';
+import { PROPS, propCell, propLights, propFlames, renderShapes, footprint, propHeight } from './props.js?v=f76c404';
+import { buildExterior } from './exterior.js?v=f76c404';
+import { floraArt } from './flora.js?v=f76c404';
+import { GY, DH, V, ZS, STEP_PX, toScreen, fadeUp, thinUp } from './view.js?v=f76c404';
 
 const CS = 256;
 const hash = (a, b, c = 0) => { let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(c | 0, 1440662683); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
@@ -121,7 +123,19 @@ function floorColor(M, t, i, j, u, v, X, Y, o) {
       if (hash(X >> 1, Y >> 1, 13) < .0015) set(o, [150, 140, 164]);
       break;
     }
-    case F.GRAVEL: { const n = hash(X, Y); set(o, n < .3 ? [120, 112, 100] : n > .8 ? [70, 64, 58] : [96, 90, 82]); break; }
+    case F.GRAVEL: {                                                                   // the walks: cobbles in a dark joint, a kerb of long stones by the grass
+      const gr = (ii, jj) => ii >= 0 && jj >= 0 && ii < M.W && jj < M.H && M.floor[jj * M.W + ii] === F.GRASS;
+      const ku = u < .17 && gr(i - 1, j) ? u : u > .83 && gr(i + 1, j) ? 1 - u : -1, kv = v < .17 && gr(i, j - 1) ? v : v > .83 && gr(i, j + 1) ? 1 - v : -1;
+      if (ku >= 0 || kv >= 0) {
+        const along = ku >= 0 ? fy : fx, seg = Math.floor(along * 1.6), d = Math.max(ku, kv);
+        if (d < .03 || frac(along * 1.6) < .06) { set(o, [36, 30, 36]); break; }
+        set(o, [140, 126, 130], (.86 + hash(seg, ku >= 0 ? i : j, 41) * .16) * (d < .07 ? 1.12 : 1)); break; }
+      const sx = fx * 2.7, sy = fy * 2.7, gx = Math.floor(sx), gy = Math.floor(sy); let d1 = 9, d2 = 9, id = 0;
+      for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const cx = gx + a, cy = gy + b, dx = sx - (cx + .2 + hash(cx, cy, 31) * .6), dy = sy - (cy + .2 + hash(cx, cy, 32) * .6), d = Math.hypot(dx, dy);
+        if (d < d1) { d2 = d1; d1 = d; id = hash(cx, cy, 33); } else if (d < d2) d2 = d; }
+      if (d2 - d1 < .1) { set(o, [38, 30, 38]); break; }
+      const warm = vnoise(fx * .3, fy * .3, 17);
+      set(o, [116 + warm * 14, 98 + warm * 6, 104], (.74 + id * .34) * (1.08 - d1 * .3) * (d2 - d1 < .18 ? .86 : 1)); break; }
     case F.TILE: {
       const a = Math.floor(fx * 2), c = Math.floor(fy * 2), ue = frac(fx * 2), ve = frac(fy * 2);
       set(o, [124, 72, 50], .86 + hash(a, c, 3) * .18 * (ue < .14 || ve < .14 ? 1.1 : 1));
@@ -144,7 +158,7 @@ function floorColor(M, t, i, j, u, v, X, Y, o) {
   const near = (dd, k0) => { if (dd < r && dd > -.01) ao = Math.min(ao, k0 + (1 - k0) * Math.max(0, dd) / r); };
   if (at(i - 1, j, 4)) near(u, .58); if (at(i, j - 1, 1)) near(v, .58); if (at(i + 1, j, 8)) near(1 - u, .7); if (at(i, j + 1, 2)) near(1 - v, .7);
   if (own & 1) near(1 - TH - v, .7); if (own & 2) near(v - TH, .58); if (own & 4) near(1 - TH - u, .7); if (own & 8) near(u - TH, .58);
-  const LV = M.level; if (LV) { const me = LV[j * W + i];
+  const LV = M.level; if (LV && M.block[j * W + i] !== B.WALL && M.block[j * W + i] !== B.DOOR) { const me = LV[j * W + i];   // (a wall cell's floor is the room's beside it: no step down to it)
     if (v < .3 && LV[(j - 1) * W + i] > me) ao = Math.min(ao, .62 + .38 * v / .3); if (u < .3 && LV[j * W + i - 1] > me) ao = Math.min(ao, .62 + .38 * u / .3); }
   const k = ao * (.98 + hash(X, Y, 1) * .04);
   o[0] = clamp8(o[0] * k); o[1] = clamp8(o[1] * k); o[2] = clamp8(o[2] * k);
@@ -154,9 +168,18 @@ function floorColor(M, t, i, j, u, v, X, Y, o) {
 // feat: 1 window, 2 candle in a bracket, 3 pilaster, 4 banner, 5 crucifix. A cell paints one face (1 L, 2 R) into a room.
 // Walls are slabs WALL_T of a cell thick along the edge of their cell that meets the floor.
 const WALL_T = .3;
-const WALL_H = Math.round(132 * ZS), GREAT_H = Math.round(176 * ZS), CUT_H = 17, WALL_EXT = Math.round(150 * ZS), LOW_H = 15;
+// (tall enough for the great arch between the nave and the narthex to stand whole under its coping)
+const WALL_H = Math.round(200 * ZS), GREAT_H = Math.round(244 * ZS), CUT_H = 17, WALL_EXT = Math.round(218 * ZS), LOW_H = 15;
+// Seen from out in the open, the building's outer face stands this high, its roofs above it.
+const FACADE_H = WALL_EXT;
 // Walls seen from outside rise against the night: they sink into the dark only far higher up.
 const fadeExt = (col, z) => { if (z <= 104) return col; const t = Math.min(1, (z - 104) / 90), e = t * t * (3 - 2 * t); return [col[0] + (14 - col[0]) * e, col[1] + (11 - col[1]) * e, col[2] + (18 - col[2]) * e]; };
+// Inside, a wall sinks into the dark higher up than other things do, so its doorways' arches show whole.
+const fadeWall = (col, z) => {                                                     // from well up the wall, fully dark at its top
+  const z0 = 88, z1 = WALL_H - 2; if (z <= z0) return col;
+  const t = Math.min(1, (z - z0) / (z1 - z0)), e = t * t * (3 - 2 * t);
+  return [col[0] + (11 - col[0]) * e, col[1] + (9 - col[1]) * e, col[2] + (10 - col[2]) * e];
+};
 // The coloured light the windows threw on the floor: off (the windows still glow).
 const COLOURED_RAYS = false;
 const GLASS = [[64, 96, 190], [180, 40, 44], [214, 170, 70], [60, 140, 90], [130, 70, 170]];
@@ -373,7 +396,8 @@ export function makeWorld(M, extra = {}) {
   }
   const shut = k => { const A = arch[k]; return !!A && A.door >= 0 && !(doors[A.door].open && doors[A.door].p > .55); };
   const blocksWay = k => { const b = M.block[k]; if (!b) return false; if (b === B.ARCH) return shut(k); if (b === B.PROP) return PROPS[M.props[M.pi[k]].type].solid !== false; return true; };
-  const solid = (i, j) => i < 0 || j < 0 || i >= W || j >= Hh || (M.floor[j * W + i] === F.VOID && M.block[j * W + i] !== B.ARCH) || blocksWay(j * W + i);
+  const extSolid = new Uint8Array(W * Hh);                                             // (the buttresses and the porch outside)
+  const solid = (i, j) => i < 0 || j < 0 || i >= W || j >= Hh || (M.floor[j * W + i] === F.VOID && M.block[j * W + i] !== B.ARCH) || blocksWay(j * W + i) || extSolid[j * W + i] === 1;
   const floorChunks = new Map(), bloodChunks = new Map(), sprites = new Map(), px = [0, 0, 0];
   // ---- heights: floor cells a few steps up (the dais); everything standing on them is lifted with them
   const LV = M.level || new Uint8Array(W * Hh), lift = k => LV[k] * STEP_PX;
@@ -434,26 +458,130 @@ export function makeWorld(M, extra = {}) {
     else if (b === 1 && (at2(i - 1, j) & 2 || at2(i + 1, j) & 2) && !(at2(i - 1, j) & 1 || at2(i + 1, j) & 1)) { nb = 2; src = [i, j + 1]; }
     if (nb !== b) { slab[k] = nb; const n = src[1] * W + src[0]; pFloor[k] = M.floor[n]; pLv[k] = LV[n]; pFrom[k] = n; }
   }
+  // One straight run of wall keeps to one edge: where part of it stands between two floors (on its south or east edge),
+  // the rest of it, with floor on one side only, moves over to that edge too, so the wall doesn't step out halfway.
+  { const plain = k => M.block[k] === B.WALL || M.block[k] === B.DOOR;
+    for (const vert of [true, false]) {
+      const far = vert ? 4 : 1, near = vert ? 8 : 2, step = vert ? W : 1, seen = new Uint8Array(W * Hh);
+      for (let k = 0; k < W * Hh; k++) {
+        if (seen[k] || !plain(k) || !(slab[k] & (far | near))) continue;
+        const run = []; let n = k;
+        while (n < W * Hh && plain(n) && slab[n] & (far | near)) { run.push(n); seen[n] = 1; if (!vert && (n + 1) % W === 0) break; n += step; }
+        if (!run.some(c => slab[c] & far)) continue;
+        for (const c of run) if (slab[c] === near) {
+          const i = c % W, j = (c / W) | 0, src = vert ? (j * W + i - 1) : ((j - 1) * W + i);
+          slab[c] = far; pFloor[c] = M.floor[src]; pLv[c] = LV[src]; pFrom[c] = src;
+        } else if ((slab[c] & near) && !(slab[c] & far)) slab[c] = (slab[c] & ~near) | far;   // a corner on the run: its band too
+      }
+    } }
   // A wall cut down stands on the floor beside it; along one straight run of wall its coping keeps one height (the top
   // of the highest floor along it), so the cut wall reads as one straight line even where the floor steps.
-  const cutH = new Int16Array(W * Hh).fill(CUT_H);
+  const cutH = new Int16Array(W * Hh).fill(CUT_H), runLow = new Int16Array(W * Hh).fill(-1);   // runLow: its foot, the lowest floor along the run
   { const wallLine = k => (M.block[k] === B.WALL || M.block[k] === B.DOOR) && pFrom[k] >= 0;
     const seen = new Uint8Array(W * Hh);
     for (let k = 0; k < W * Hh; k++) if (!seen[k] && wallLine(k) && slab[k]) {
       const vert = slab[k] & 12, step = vert ? W : 1, run = [];
       let s0 = k; while (s0 - step >= 0 && wallLine(s0 - step) && (slab[s0 - step] & (vert ? 12 : 3)) === (slab[k] & (vert ? 12 : 3))) s0 -= step;
       for (let n = s0; n < W * Hh && wallLine(n) && (slab[n] & (vert ? 12 : 3)) === (slab[k] & (vert ? 12 : 3)); n += step) { run.push(n); seen[n] = 1; if (!vert && (n + 1) % W === 0) break; }
-      const top = Math.max(...run.map(n => pLv[n])) * STEP_PX + CUT_H;
+      const top = Math.max(...run.map(n => pLv[n])) * STEP_PX + CUT_H, low = Math.min(...run.map(n => pLv[n])) * STEP_PX;
+      const foot = Math.min(low, ...run.map(n => wBase[n] + wLo[n]));                // (and the lowest ground any of it looks onto)
+      for (const n of run) runLow[n] = foot;
       for (const n of run) cutH[n] = top - pLv[n] * STEP_PX;
-    } }
+    }
+    // a corner (no run of its own) reaches down as far as the runs meeting in it
+    for (let k = 0; k < W * Hh; k++) if (runLow[k] < 0 && wallish0(M.block[k])) { let lo = -1; const i = k % W, j = (k / W) | 0;
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= W || jj >= Hh) continue;
+        const n = jj * W + ii; if (runLow[n] >= 0) lo = lo < 0 ? runLow[n] : Math.min(lo, runLow[n]); }
+      if (lo >= 0) runLow[k] = lo; }
+  }
   standLv = pLv;
-  // The slab's rectangles in its cell (for drawing and for collision).
+  // ---- joints. A slab sits on one edge of its cell, so where two walls meet with their slabs on different edges (a wall
+  // between two rooms stands on its south or east side, a room's own wall on the room's side) they would stop short of
+  // each other. Every slab that ends against another wall cell carries on into it as an arm, out to the nearest slab or
+  // arm crossing it there; an arm meeting a slab on the other edge of the same line steps across to it.
+  const joint = new Array(W * Hh), noPost = new Uint8Array(W * Hh);
+  { const T = WALL_T, hB = b => b & 1 ? [1 - T, 1] : b & 2 ? [0, T] : null, vB = b => b & 4 ? [1 - T, 1] : b & 8 ? [0, T] : null;
+    const postR = p => [null, [1 - T, 1 - T, 1, 1], [0, 1 - T, T, 1], [1 - T, 0, 1, T], [0, 0, T, T]][p];
+    const R = (h, a0, a1, b0, b1, t = h ? 'h' : 'v') => { const r = h ? [a0, b0, a1, b1] : [b0, a0, b1, a1]; r.t = t; return r; };   // a: along the arm, b: across it
+    for (let j = 0; j < Hh; j++) for (let i = 0; i < W; i++) {
+      const k = j * W + i; if (!wallish0(M.block[k]) || M.block[k] === B.ARCH) continue;
+      const oh = hB(slab[k]), ov = vB(slab[k]), arms = [];
+      for (const [di, dj] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+        const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= W || jj >= Hh) continue;
+        const n = jj * W + ii; if (!wallish0(M.block[n])) continue;
+        const h = di !== 0, band = h ? hB(slab[n]) : vB(slab[n]); if (!band) continue;
+        const same = h ? oh : ov; if (same && same[0] === band[0]) continue;     // the line runs straight on
+        arms.push({ h, s: h ? di : dj, band, n });
+      }
+      if (!arms.length) continue;
+      const out = [], P = post[k] ? postR(post[k]) : null; let usedPost = false;
+      for (const a of arms) {
+        const [b0, b1] = a.band, perp = [], op = a.h ? ov : oh;
+        if (op) perp.push(op);
+        for (const c of arms) if (c.h !== a.h) perp.push(c.band);
+        if (perp.length) {                                                         // out to the nearest wall across it
+          const reach = a.s < 0 ? Math.min(...perp.map(p => p[1])) : Math.max(...perp.map(p => p[0]));
+          const r = a.s < 0 ? R(a.h, 0, reach, b0, b1) : R(a.h, reach, 1, b0, b1); r.arm = a; out.push(r); continue;
+        }
+        const opp = arms.find(c => c.h === a.h && c.s === -a.s), other = (a.h ? oh : ov) || (opp && opp.band);
+        if (other && other[0] === b0) { out.push(R(a.h, 0, 1, b0, b1)); continue; }   // straight through
+        if (other) {                                                               // a step across to the other edge
+          if (other === (a.h ? oh : ov) && a.s < 0 && M.block[a.n] !== B.ARCH) continue;   // (made once, by the cell before the step)
+          const lo = Math.min(b0, other[0]), hi = Math.max(b1, other[1]);
+          out.push(a.s < 0 ? R(a.h, 0, T, lo, hi, 'c') : R(a.h, 1 - T, 1, lo, hi, 'c')); continue;
+        }
+        if (P) {                                                                   // a dead end at a corner post: round to it
+          const [p0, p1] = a.h ? [P[0], P[2]] : [P[1], P[3]], [q0, q1] = a.h ? [P[1], P[3]] : [P[0], P[2]];
+          out.push(a.s < 0 ? R(a.h, 0, p1, b0, b1) : R(a.h, p0, 1, b0, b1));
+          out.push(R(a.h, p0, p1, Math.min(b0, q0), Math.max(b1, q1), 'c')); usedPost = true;
+        }
+      }
+      // an arm runs on to every wall across it that it meets, not only the nearest (they may stand on different edges)
+      const own = [oh && R(true, 0, 1, oh[0], oh[1]), ov && R(false, 0, 1, ov[0], ov[1])].filter(Boolean);
+      for (let pass = 0; pass < 2; pass++) for (const r of out) { const a = r.arm; if (!a) continue;
+        for (const q of [...out, ...own]) { if (q === r || q.t !== (a.h ? 'v' : 'h')) continue;
+          if (a.h ? !(q[1] < r[3] && q[3] > r[1]) : !(q[0] < r[2] && q[2] > r[0])) continue;
+          if (a.h) { if (a.s < 0) r[2] = Math.max(r[2], q[2]); else r[0] = Math.min(r[0], q[0]); }
+          else { if (a.s < 0) r[3] = Math.max(r[3], q[3]); else r[1] = Math.min(r[1], q[1]); } } }
+      // a corner post standing apart from the arms that now close the corner is left out
+      if (P && !usedPost) { const hit = out.some(r => r[0] < P[2] && r[2] > P[0] && r[1] < P[3] && r[3] > P[1]); if (!hit) noPost[k] = 1; }
+      if (out.length) joint[k] = out;
+    } }
+  // The slab's rectangles in its cell (for drawing).
   const T_ = WALL_T, slabRects = k => {
-    const b = slab[k], out = [];
-    if (b & 1) out.push([0, 1 - T_, 1, 1]); if (b & 2) out.push([0, 0, 1, T_]); if (b & 4) out.push([1 - T_, 0, 1, 1]); if (b & 8) out.push([0, 0, T_, 1]);
-    if (post[k] === 1) out.push([1 - T_, 1 - T_, 1, 1]); if (post[k] === 2) out.push([0, 1 - T_, T_, 1]); if (post[k] === 3) out.push([1 - T_, 0, 1, T_]); if (post[k] === 4) out.push([0, 0, T_, T_]);
+    const b = slab[k], out = [], p = noPost[k] ? 0 : post[k];
+    const tag = (r, t) => (r.t = t, r);
+    if (b & 1) out.push(tag([0, 1 - T_, 1, 1], 'h')); if (b & 2) out.push(tag([0, 0, 1, T_], 'h')); if (b & 4) out.push(tag([1 - T_, 0, 1, 1], 'v')); if (b & 8) out.push(tag([0, 0, T_, 1], 'v'));
+    // a corner holding both bands: neither runs on past the other where no wall carries on beyond the cell (it would stick
+    // out across the floor there)
+    if ((b & 3) && (b & 12)) { const ci = k % W, cj = (k / W) | 0, wl = (ii, jj) => ii >= 0 && jj >= 0 && ii < W && jj < Hh && wallish0(M.block[jj * W + ii]);
+      const vx = b & 4 ? [1 - T_, 1] : [0, T_], hy = b & 1 ? [1 - T_, 1] : [0, T_];
+      for (const r of out) { if (r.t === 'h') { if (!wl(ci - 1, cj)) r[0] = Math.max(r[0], vx[0]); if (!wl(ci + 1, cj)) r[2] = Math.min(r[2], vx[1]); }
+        else if (r.t === 'v') { if (!wl(ci, cj - 1)) r[1] = Math.max(r[1], hy[0]); if (!wl(ci, cj + 1)) r[3] = Math.min(r[3], hy[1]); } } }
+    if (p === 1) out.push([1 - T_, 1 - T_, 1, 1]); if (p === 2) out.push([0, 1 - T_, T_, 1]); if (p === 3) out.push([1 - T_, 0, 1, T_]); if (p === 4) out.push([0, 0, T_, T_]);
+    if (joint[k]) out.push(...joint[k]);
     return out;
   };
+  // A corner where walls of rooms at different heights meet: seen from the upper room it rises with that room's walls
+  // (cornerUp: how much higher, cornerR: that room); from anywhere else it keeps to the lower walls it joins.
+  // a doorway cut down reaches down as far as the wall either side of it, and the floor beyond it
+  // the lowest floor of each room: a wall cut down for it reaches no further down than that, as in a room on the ground
+  let roomLow = null;                                                                   // (filled once the rooms are known)
+  const archLow = (k, sb) => { const A = arch[k], d = A.along === 1 ? 1 : W, s0 = k - A.idx * d;
+    let lo = 0; for (const e of [s0 - d, s0 + A.n * d]) if (e >= 0 && e < W * Hh && runLow[e] >= 0) lo = Math.min(lo, runLow[e] - sb);
+    const fd = A.along === 1 ? W : 1; for (let n = k + fd, m = 0; m < 8 && n < W * Hh && M.floor[n] && !wallish0(M.block[n]); n += fd, m++) lo = Math.min(lo, LV[n] * STEP_PX - sb);
+    return lo; };
+  let lastRoom = -1;                                                                    // (the room he was last in)
+  const cornerUp = new Int16Array(W * Hh), cornerR = new Int16Array(W * Hh).fill(-1);
+  for (let j = 1; j < Hh - 1; j++) for (let i = 1; i < W - 1; i++) { const k = j * W + i; if (!(joint[k] || (slab[k] & 3) && (slab[k] & 12)) || M.block[k] !== B.WALL) continue;   // (a joint, or a corner holding both its bands)
+    let m = 0, q = null; for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const n = k + dj * W + di; if (M.floor[n] && !OUTDOOR.has(M.floor[n]) && !wallish0(M.block[n]) && LV[n] * STEP_PX > m) { m = LV[n] * STEP_PX; q = [di, dj]; } }
+    if (m > wBase[k]) { cornerUp[k] = m - wBase[k]; cornerR[k] = k + q[1] * W + q[0]; } }   // (the upper room's cell beside it)
+  const jointKey = k => joint[k] ? '.j' + joint[k].map(r => r.map(v => Math.round(v * 10)).join('')).join('/') + (noPost[k] ? 'n' : '') : '';
+  // A corner of the outer walls with no floor beside it, only across a corner: the open ground there runs on under it
+  // (else a dark notch shows at the foot of the wall).
+  for (let j = 1; j < Hh - 1; j++) for (let i = 1; i < W - 1; i++) { const k = j * W + i; if (pFloor[k] || !wallish0(M.block[k])) continue;
+    for (const [di, dj] of [[1, 1], [-1, 1], [1, -1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1]]) { const n = (j + dj) * W + i + di;
+      if (OUTDOOR.has(M.floor[n]) && !wallish0(M.block[n])) { pFloor[k] = M.floor[n]; pLv[k] = LV[n]; break; } } }
   // Where a ray can find no floor (far outside the walls), the floor painter needn't look.
   const nearFloor = new Uint8Array(W * Hh), flat = new Uint8Array(W * Hh);
   for (let j = 0; j < Hh; j++) for (let i = 0; i < W; i++) {
@@ -466,9 +594,10 @@ export function makeWorld(M, extra = {}) {
   // ---- rooms: floor flooded through open ground, stopping at doorways and where one named place meets another
   // (the presbytery and the nave are one hall).
   const zoneOf = new Int16Array(W * Hh).fill(-1);
-  { const Z = M.zones || [], hall = Z.findIndex(z => z.name === 'Nave central');
+  // (the clock tower opens straight off the stores, no wall between: one room too)
+  { const Z = M.zones || [], ix = name => Z.findIndex(z => z.name === name), one = { 'Presbiterio': ix('Nave central'), 'Torre del reloj': ix('Almacén'), 'Patio de la fuente': ix('Atrio'), 'Calle de los Penitentes': ix('Atrio'), 'Jardines de la catedral': ix('Atrio') };   // (and all the open ground is one place)
     for (let j = 0; j < Hh; j++) for (let i = 0; i < W; i++) { const n = Z.findIndex(z => i >= z.r[0] && i < z.r[2] && j >= z.r[1] && j < z.r[3]);
-      zoneOf[j * W + i] = n >= 0 && Z[n].name === 'Presbiterio' && hall >= 0 ? hall : n; } }
+      zoneOf[j * W + i] = n >= 0 && one[Z[n].name] >= 0 ? one[Z[n].name] : n; } }
   const room = new Int16Array(W * Hh).fill(-1); let rooms = 0;
   for (let k = 0; k < W * Hh; k++) {
     if (room[k] >= 0 || !M.floor[k] || M.block[k] === B.ARCH) continue;
@@ -487,8 +616,10 @@ export function makeWorld(M, extra = {}) {
     const s2 = new Set(); for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const ii = i + di, jj = j + dj; if (ii >= 0 && jj >= 0 && ii < W && jj < Hh && room[jj * W + ii] >= 0) s2.add(room[jj * W + ii]); }
     adj[k] = [...s2];
   }
+roomLow = new Int16Array(rooms).fill(32767); for (let k = 0; k < W * Hh; k++) if (room[k] >= 0) roomLow[room[k]] = Math.min(roomLow[room[k]], LV[k] * STEP_PX);
   let cur = -1, showAll = false;
-  const shown = k => showAll || cur < 0 || (adj[k] ? adj[k].includes(cur) : false);
+  // Out in the open the building's whole outer face stands in view, whichever room each stretch of it belongs to.
+  const shown = k => showAll || cur < 0 || (adj[k] ? adj[k].includes(cur) : false) || (openRoom[cur] === 1 && wExt[k] === 1);
   const roomsAt = (x, y) => { const i = Math.floor(x / CELL), j = Math.floor(y / CELL); return i >= 0 && j >= 0 && i < W && j < Hh ? adj[j * W + i] || [] : []; };
   const shownAt = (x, y) => showAll || cur < 0 || roomsAt(x, y).includes(cur);
   function focus(x, y) { const i = Math.floor(x / CELL), j = Math.floor(y / CELL); if (i >= 0 && j >= 0 && i < W && j < Hh && room[j * W + i] >= 0) cur = room[j * W + i]; }
@@ -501,6 +632,10 @@ export function makeWorld(M, extra = {}) {
     // the side are not hidden by it.
     const s = new Set();
     for (let d = 1; d <= 3; d++) for (const [di, dj] of [[-d, -d], [-d, 1 - d], [1 - d, -d]]) { const ii = i + di, jj = j + dj; if (ii >= 0 && jj >= 0 && ii < W && jj < Hh && room[jj * W + ii] >= 0) s.add(room[jj * W + ii]); }
+    // a corner where a room's back wall meets its front wall: the room lies diagonally beside it
+    if (M.block[k] !== B.ARCH) for (const [di, dj] of [[-1, 1], [1, -1]]) { const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= W || jj >= Hh) continue;
+      const r = room[jj * W + ii], at = (a, b) => a >= 0 && b >= 0 && a < W && b < Hh && room[b * W + a] === r;
+      if (r >= 0 && !at(i + di, j) && !at(i, j + dj) && !OUTDOOR.has(M.floor[jj * W + ii])) s.add(r); }   // (open ground has no front wall to cut down)   // (only a true corner: not a wall that faces that room straight on)
     if (s.size) frontOf.set(k, s);
   }
 
@@ -519,7 +654,14 @@ export function makeWorld(M, extra = {}) {
   const wExt = new Uint8Array(W * Hh);
   for (let j = 0; j < Hh; j++) for (let i = 0; i < W; i++) { const k = j * W + i; if (M.block[k] !== B.WALL) continue;
     const f = wFace[k], n = f === 1 ? (j + 1) * W + i : f === 2 ? j * W + i + 1 : -1;
-    wExt[k] = n >= 0 ? OUTDOOR.has(M.floor[n]) : (isFloor(i, j - 1) || isFloor(i - 1, j)); }
+    // (no face of its own: the building's outer face, unless it is a junction inside, walls running on south and east)
+    const inner = () => { const w = (ii, jj) => ii < W && jj < Hh && wallish0(M.block[jj * W + ii]); return w(i + 1, j) && w(i, j + 1); };
+    wExt[k] = n >= 0 ? OUTDOOR.has(M.floor[n]) : (isFloor(i, j - 1) || isFloor(i - 1, j)) && !inner(); }
+  // the corner at the end of an outer wall (no face of its own) stands as tall as the wall it ends
+  for (let j = 1; j < Hh; j++) for (let i = 1; i < W; i++) { const k = j * W + i; if (M.block[k] === B.WALL && !wFace[k] && !wExt[k] && (wExt[k - W] && wFace[k - W] === 2 || wExt[k - 1] && wFace[k - 1] === 1 || j + 1 < Hh && wExt[k + W] && wFace[k + W] === 2 || i + 1 < W && wExt[k + 1] && wFace[k + 1] === 1)) wExt[k] = 1; }
+  // a doorway out into open ground stands as tall as the outer wall it is cut in
+  for (let k = 0; k < W * Hh; k++) if (arch[k]) { const i = k % W, j = (k / W) | 0, o = (ii, jj) => ii >= 0 && jj >= 0 && ii < W && jj < Hh && OUTDOOR.has(M.floor[jj * W + ii]);
+    wExt[k] = arch[k].along === 1 ? o(i, j - 1) || o(i, j + 1) : o(i - 1, j) || o(i + 1, j); }
   const winOK = (i, j, f) => outsideOf(i, j, f) || wExt[j * W + i];
   for (let j = 0; j < Hh; j++) for (let i = 0; i < W; i++) {
     const k = j * W + i, t = M.block[k]; if (!isWall(t)) continue;
@@ -528,18 +670,23 @@ export function makeWorld(M, extra = {}) {
     const along = wFace[k] === 1 ? i : j, outside = winOK(i, j, wFace[k]);
     const [fx, fy] = wFace[k] === 1 ? [i + .5, j + 1] : [i + 1, j + .5];
     const [ni, nj] = wFace[k] === 1 ? [i + 1, j] : [i, j + 1], nk = nj * W + ni;
-    if (outside && along % 7 === 2 && ni < W && nj < Hh && M.block[nk] === B.WALL && wFace[nk] === wFace[k] && winOK(ni, nj, wFace[k]) && !wFeat[nk]) {
+    // either side of a doorway raised on a step (the stairs' arches) a candle, so both walls show alike
+    const besideStair = [-1, 1].some(s => { const ii = wFace[k] === 1 ? i + s : i, jj = wFace[k] === 1 ? j : j + s, n = jj * W + ii;
+      return ii >= 0 && jj >= 0 && ii < W && jj < Hh && M.block[n] === B.ARCH && LV[n] > LV[(j + (wFace[k] === 1 ? 1 : 0)) * W + i + (wFace[k] === 1 ? 0 : 1)]; });
+    const sameRun = (ii, jj) => ii >= 0 && jj >= 0 && ii < W && jj < Hh && M.block[jj * W + ii] === B.WALL && wFace[jj * W + ii] === wFace[k];
+    const straight = wFace[k] === 1 ? sameRun(i - 1, j) && sameRun(ni + 1, nj) : sameRun(i, j - 1) && sameRun(ni, nj + 1);
+    if (!besideStair && outside && straight && along % 7 === 2 && ni < W && nj < Hh && M.block[nk] === B.WALL && wFace[nk] === wFace[k] && winOK(ni, nj, wFace[k]) && !wFeat[nk]) {
       wFeat[k] = 1; wFeat[nk] = 1; wPart[nk] = 1;
       const [gx, gy] = wFace[k] === 1 ? [i + 1, j + 1] : [i + 1, j + 1];
-      lights.push({ x: gx * CELL, y: gy * CELL, z: (WALL_H - 50 + wLift[k]) / V, col: [96, 70, 150], r: 40, cellK: k });
+      lights.push({ x: gx * CELL, y: gy * CELL, z: (WALL_H - 50 + wLift[k]) / V, col: [96, 70, 150], r: 40, cellK: k, side: wFace[k] === 1 ? (j + 1) * W + i : j * W + i + 1 });   // (it glows on the side it faces)
       const g0 = GLASS[Math.floor(hash(i, j, 21) * 5)], g1 = GLASS[Math.floor(hash(i, j, 22) * 5)];
       const L = 4.4, quad = (a, b) => wFace[k] === 1
         ? [[i + .2 + a * .6, j + 1], [i + .2 + b * .6, j + 1], [i + .2 + b * .6 + MOON[0] * L, j + 1 + MOON[1] * L], [i + .2 + a * .6 + MOON[0] * L, j + 1 + MOON[1] * L]]
         : [[i + 1, j + .2 + a * .6], [i + 1, j + .2 + b * .6], [i + 1 + MOON[1] * L, j + .2 + b * .6 + MOON[0] * L], [i + 1 + MOON[1] * L, j + .2 + a * .6 + MOON[0] * L]];
       if (COLOURED_RAYS) beams.push({ parts: [[quad(0, .33), g0], [quad(.33, .67), [120, 130, 170]], [quad(.67, 1), g1]], seed: hash(i, j, 5), k: .42 });
-    } else if (along % 7 === 5) wFeat[k] = 3;
-    else if ((!outside || wExt[k]) && hash(i, j, 41) < .16) wFeat[k] = 4;
-    else if (hash(i, j, 43) < .14) {
+    } else if (!besideStair && along % 7 === 5) wFeat[k] = 3;
+    else if (!besideStair && (!outside || wExt[k]) && hash(i, j, 41) < .16) wFeat[k] = 4;
+    else if (besideStair || hash(i, j, 43) < .14) {
       wFeat[k] = 2;
       lights.push({ x: fx * CELL, y: fy * CELL, z: (WALL_H - Math.floor(WALL_H * .47) + 4 + wLift[k]) / V, col: [255, 150, 70], r: 52, flicker: hash(i, j) * 9, cellK: k });
       { const x = wFace[k] === 1 ? 9 : 30, fl = [20 * (i - j) - 20 + x, GY * (i + j) - WALL_H + BOT[x] + 1 + Math.floor(WALL_H * .47) - 5 - wLift[k], hash(i, j) * 9]; fl.cellK = k; flames.push(fl); }
@@ -557,11 +704,30 @@ export function makeWorld(M, extra = {}) {
   // The moon over open ground: every garden and gravel cell lit from the sky.
   const openRoom = new Uint8Array(rooms);
   for (let k = 0; k < W * Hh; k++) if (room[k] >= 0 && OUTDOOR.has(M.floor[k])) openRoom[room[k]] = 1;
+  // a doorway onto open ground (whatever its paving: the runner too) is part of the outer face
+  for (let k = 0; k < W * Hh; k++) if (arch[k]) { const i = k % W, j = (k / W) | 0, o = (ii, jj) => ii >= 0 && jj >= 0 && ii < W && jj < Hh && room[jj * W + ii] >= 0 && openRoom[room[jj * W + ii]] === 1;
+    if (arch[k].along === 1 ? o(i, j - 1) || o(i, j + 1) : o(i - 1, j) || o(i + 1, j)) wExt[k] = 1; }
+  // ---- the church seen from outside (src/exterior.js): above the eaves one sprite, at its feet buttresses and the porch
+  let roofs = null;
+  const PXC = CELL * V;                                                                // pixels of height per cell of run
+  function buildRoofs() {
+    let outRoom = -1; for (let k = 0; k < W * Hh && outRoom < 0; k++) if (room[k] >= 0 && openRoom[room[k]]) outRoom = room[k];
+    const X = buildExterior({ O: M.OX, E: 2 * STEP_PX + WALL_EXT, G: 2 * STEP_PX, PXC, CELL, V });
+    roofs = X.objects;
+    for (const [i, j] of X.solids) if (i >= 0 && j >= 0 && i < W && j < Hh) extSolid[j * W + i] = 1;
+    for (const L of X.lights) { L.rooms = [outRoom]; const [sx, sy] = toScr(L.x, L.y, L.z); L.sx = sx; L.sy = sy; L.spr = lightSprite(L.col, L.r); lights.push(L); }
+    for (const f of X.flames) { f[4] = [outRoom]; flames.push(f); }
+  }
+  // (built just after the game starts, when the browser is idle: not in the way of loading, nor the first step outside)
+  setTimeout(() => (window.requestIdleCallback || (f => f()))(() => { if (!roofs) buildRoofs(); }, { timeout: 3000 }), 400);
   const sky = (i, j) => { const k = j * W + i; return !!M.floor[k] && (OUTDOOR.has(M.floor[k]) || (room[k] >= 0 && openRoom[room[k]])); };
   for (let j = 0; j < Hh; j++) for (let i = 0; i < W; i++) {
     const k = j * W + i; if (!sky(i, j) || (i > 0 && sky(i - 1, j) && LV[k - 1] === LV[k])) continue;      // one strip per run of open cells
     let e = i; while (e < W && sky(e, j) && LV[j * W + e] === LV[k]) e++;
-    beams.push({ parts: [[[[i, j], [e, j], [e, j + 1], [i, j + 1]], [86, 100, 150]]], seed: hash(i, j, 3), k: 1, sky: 1, up: lift(k) }); }
+    // (where nothing of the church stands behind it, the moonlight reaches up too: the trees there are lit to their tops)
+    let tall = 14; for (let d = 1; d <= 14 && tall === 14; d++) for (let x = i; x < e; x++) { const ii = x - d, jj = j - d; if (ii >= 0 && jj >= 0 && (M.block[jj * W + ii] && M.block[jj * W + ii] !== B.PROP && M.block[jj * W + ii] !== B.LOW || (M.floor[jj * W + ii] && !sky(ii, jj)))) { tall = d - 1; break; } }
+    tall = Math.min(260, tall * 2 * GY);                                              // (up to where the church begins behind it)
+    beams.push({ parts: [[[[i, j], [e, j], [e, j + 1], [i, j + 1]], [86, 100, 150]]], seed: hash(i, j, 3), k: 1, sky: 1, up: lift(k), tall }); }
   // Light from furniture and piers.
   for (const P of M.props) {
     const up = lift(P.y * W + P.x);
@@ -574,11 +740,12 @@ export function makeWorld(M, extra = {}) {
     { const fl = [20 * (i - j) - 20 + 10, GY * (i + j) - 47 - up, hash(i, j) * 9]; fl.cellK = j * W + i; flames.push(fl); }
   }
   // (the rooms each light belongs to: by the cell it shines from; a wall candle's own cell is its wall)
-  for (const L of lights) if (!L.rooms) L.rooms = L.cellK !== undefined ? adj[L.cellK] : roomsAt(L.x, L.y);
+  for (const L of lights) if (!L.rooms) L.rooms = L.side !== undefined && room[L.side] >= 0 ? [room[L.side]] : L.cellK !== undefined ? adj[L.cellK] : roomsAt(L.x, L.y);
   for (const f of flames) if (!f[4]) f[4] = f.cellK !== undefined ? adj[f.cellK] : null;
   for (const b of beams) if (!b.rooms && b.parts[0]) { const [[x, y]] = b.parts[0][0]; b.rooms = adj[Math.floor(y + .5) * W + Math.floor(x + .5)] || null; }
   for (const L of lights) { if (!L.screen) { const [sx, sy] = toScr(L.x, L.y, L.z); L.sx = sx; L.sy = sy; } L.spr = lightSprite(L.col, L.r); }
   for (const b of beams) { b.scr = b.parts.map(([q, col]) => [q.map(([x, y]) => { const [sx, sy] = toScr(x * CELL, y * CELL); return [sx, sy - (b.up || 0)]; }), col]);
+    if (b.tall) { const [[a, c, e2, f2], col] = b.scr[0]; b.scr[0] = [[[a[0], a[1] - b.tall], [c[0], c[1] - b.tall], c, e2, f2, a], col]; }
     const all = b.scr.flatMap(p => p[0]); b.x0 = Math.min(...all.map(p => p[0])); b.x1 = Math.max(...all.map(p => p[0])); b.y0 = Math.min(...all.map(p => p[1])); b.y1 = Math.max(...all.map(p => p[1])); }
 
   // ---- floor and blood
@@ -606,6 +773,7 @@ export function makeWorld(M, extra = {}) {
           const k = j * W + i, l = FL[k] ? lp(k) : 0; if (l < z) { prev = [i, j]; continue; }
           const t = FL[k]; if (!t) break;
           if (l === z || !prev || (prev[0] === i && prev[1] === j)) floorColor(M, t, i, j, fi - i, fj - j, X, Y, px);
+          else if (t === F.WOOD) { const [ai, aj] = cellAt(X, Y + l); floorColor(M, t, i, j, ai - i, aj - j, X, Y, px); }   // a wooden floor's edge: the boards running on as the floor, unbroken   // a wooden floor's edge: its boards, as the floor (not in the shade of a wall's foot)
           else {                                                                     // a riser: stone, or the runner going up it
             const south = prev[1] > j, along = south ? fi - i : fj - j, down = l - z, carpet = t === F.CARPET;
             const pk = prev[1] * W + prev[0], drop = l - (FL[pk] ? lp(pk) : 0);
@@ -643,11 +811,12 @@ export function makeWorld(M, extra = {}) {
     for (let k = 0; k < W * Hh; k++) if (pFloor[k] && adj[k] && adj[k].includes(r)) {
       const i = k % W, j = (k / W) | 0, X = 20 * (i - j), Y = GY * (i + j), up = pLv[k] * STEP_PX;
       const parts = [];
-      if (room[k] === r || M.block[k] === B.ARCH) parts.push([0, 0, 1, 1]);
-      else if (pFrom[k] >= 0 && room[pFrom[k]] === r) { const b = slab[k], T = WALL_T; parts.push([b & 8 ? T : 0, b & 2 ? T : 0, b & 4 ? 1 - T : 1, b & 1 ? 1 - T : 1]); }   // this room's floor, up to the slab
+      if (room[k] === r || M.block[k] === B.ARCH || (pFrom[k] < 0 && openRoom[r] && OUTDOOR.has(pFloor[k]))) parts.push([0, 0, 1, 1]);   // (a corner the open ground runs under: all of it)
+      // (or a corner the open ground runs under)
+      else if ((pFrom[k] >= 0 && room[pFrom[k]] === r) || (pFrom[k] < 0 && openRoom[r] && OUTDOOR.has(pFloor[k]))) { const b = slab[k], T = WALL_T; parts.push([b & 8 ? T : 0, b & 2 ? T : 0, b & 4 ? 1 - T : 1, b & 1 ? 1 - T : 1]); }   // this room's floor, up to the slab
       // a riser shows only where this room's own floor drops to more of this room
-      const mine = n => room[n] === r || (pFrom[n] >= 0 && room[pFrom[n]] === r);
-      const drop = (ii, jj) => { const n = jj * W + ii; return mine(k) && ii < W && jj < Hh && mine(n) && pLv[n] < pLv[k]; };
+      const mine = n => room[n] === r || (M.block[n] === B.ARCH && adj[n] && adj[n].includes(r)) || (pFrom[n] >= 0 && room[pFrom[n]] === r);   // (a doorway's threshold too: the floor's edge down to it shows)
+      const drop = (ii, jj) => { const n = jj * W + ii; return mine(k) && ii < W && jj < Hh && mine(n) && pLv[n] < pLv[k] ? pLv[n] * STEP_PX : -1; };   // down to the floor below it
       for (const q of parts) cells.push([X, Y, [drop(i, j + 1), drop(i + 1, j)], q, up]);
       x0 = Math.min(x0, X - 21); x1 = Math.max(x1, X + 21); y0 = Math.min(y0, Y - up - 1); y1 = Math.max(y1, Y + DH + 1);
     }
@@ -657,9 +826,9 @@ export function makeWorld(M, extra = {}) {
       for (const h of [up]) {                                                         // the top (its front faces below, unless under a wall)
         const pts = [P(x, y, u0, v0, h), P(x, y, u1, v0, h), P(x, y, u1, v1, h), P(x, y, u0, v1, h)];
         g.beginPath(); g.moveTo(pts[0][0], pts[0][1] - .5); g.lineTo(pts[1][0] + .5, pts[1][1]); g.lineTo(pts[2][0], pts[2][1] + .5); g.lineTo(pts[3][0] - .5, pts[3][1]); g.fill(); }
-      const a = P(x, y, u0, v1, up), b = P(x, y, u1, v1, up), c2 = P(x, y, u1, v1, 0), d = P(x, y, u0, v1, 0);
-      if (side[0]) { g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.lineTo(...c2); g.lineTo(...d); g.fill(); }
-      if (side[1]) { const e = P(x, y, u1, v0, up), f = P(x, y, u1, v0, 0); g.beginPath(); g.moveTo(...e); g.lineTo(...b); g.lineTo(...c2); g.lineTo(...f); g.fill(); }
+      const a = P(x, y, u0, v1, up), b = P(x, y, u1, v1, up);
+      if (side[0] >= 0) { const c2 = P(x, y, u1, v1, side[0]), d = P(x, y, u0, v1, side[0]); g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.lineTo(...c2); g.lineTo(...d); g.fill(); }
+      if (side[1] >= 0) { const c2 = P(x, y, u1, v1, side[1]), e = P(x, y, u1, v0, up), f = P(x, y, u1, v0, side[1]); g.beginPath(); g.moveTo(...e); g.lineTo(...b); g.lineTo(...c2); g.lineTo(...f); g.fill(); }
     } m = { c, x0, y0 }; masks.set(r, m); return m;
   }
   const [fbuf, fb] = canvas(8, 8);
@@ -668,7 +837,8 @@ export function makeWorld(M, extra = {}) {
     if (masked) { if (fbuf.width !== Math.ceil(vw) || fbuf.height !== Math.ceil(vh)) { fbuf.width = Math.ceil(vw); fbuf.height = Math.ceil(vh); } fb.globalCompositeOperation = 'source-over'; fb.clearRect(0, 0, fbuf.width, fbuf.height); }
     eachChunk(ox, oy, vw, vh, (cx, cy, k) => { let c = floorChunks.get(k); if (!c && budget-- > 0) { c = genFloor(cx, cy); if (keep) floorChunks.set(k, c); } if (c) t.drawImage(c, cx * CS + ox, cy * CS + oy); });
     eachChunk(ox, oy, vw, vh, (cx, cy, k) => { const c = bloodChunks.get(k); if (c) t.drawImage(c[0], cx * CS + ox, cy * CS + oy); });
-    if (masked) { const m = roomMask(cur); fb.globalCompositeOperation = 'destination-in'; fb.drawImage(m.c, m.x0 + ox, m.y0 + oy); fb.globalCompositeOperation = 'source-over'; g.drawImage(fbuf, 0, 0); }
+    if (masked) { const m = roomMask(cur); fb.globalCompositeOperation = 'destination-in'; { const mx = m.x0 + ox, my = m.y0 + oy, sx = Math.max(0, -mx), sy = Math.max(0, -my), sw = Math.min(m.c.width - sx, fbuf.width - mx - sx), sh = Math.min(m.c.height - sy, fbuf.height - my - sy);   // (only what is on screen of it)
+        if (sw > 0 && sh > 0) fb.drawImage(m.c, sx, sy, sw, sh, mx + sx, my + sy, sw, sh); else fb.clearRect(0, 0, fbuf.width, fbuf.height); } fb.globalCompositeOperation = 'source-over'; g.drawImage(fbuf, 0, 0); }
   }
   const blood = { fillStyle: '#000', fillRect(x, y, w, h) { const cx = Math.floor(x / CS), cy = Math.floor(y / CS), k = cx + ',' + cy; let c = bloodChunks.get(k); if (!c) { c = canvas(CS, CS); bloodChunks.set(k, c); } c[1].fillStyle = this.fillStyle; c[1].fillRect(x - cx * CS, y - cy * CS, w, h); } };
   const clearBlood = () => bloodChunks.clear();
@@ -676,31 +846,129 @@ export function makeWorld(M, extra = {}) {
   // ---- sprites for each kind of cell
   // The row on a cell sprite where a wall face meets the top of its slab, column x (for things fixed to the face).
   const faceTop = x => x < 20 ? GY * (x / 20 + 1) : GY * (1 + (40 - x) / 20);
-  function wallSprite(t, i, j, k, cutDown, p = 0) {
-    const ext = !cutDown && t === B.WALL && wExt[k], fa = wFace[k], fe = cutDown ? 0 : wFeat[k];
-    const h = cutDown ? cutH[k] : t === B.GREAT ? GREAT_H : ext ? WALL_EXT : WALL_H, lo = cutDown ? 0 : wLo[k];
-    const shapes = slabRects(k).map(([x0, y0, x1, y1]) => [x0, y0, lo, x1, y1, h, 'wall']);
-    if (cutDown) for (const [x0, y0, x1, y1] of slabRects(k)) shapes.push([x0 - .05, y0 - .05, h, x1 + .05, y1 + .05, h + 3, 'cap']);   // a coping on the cut wall
-    if (ext && (i + j) % 3 === 0) for (const [x0, y0, x1, y1] of slabRects(k).slice(0, 1)) shapes.push(['C', (x0 + x1) / 2, (y0 + y1) / 2, .14, h, h + 36, 'pale', .015]);   // a pinnacle
-    const fade = ext ? fadeExt : fadeUp, A = t === B.ARCH ? arch[k] : null;
-    const c = renderShapes(shapes, h, { lo, open: true, outline: false, color: (hit) => {
+  // Beside a doorway raised on a step (the stairs' arches), the wall sinks into the dark as high up as the doorway does,
+  // easing back to its own over a few cells, so the two read as one wall.
+  const fadeLift = new Int16Array(W * Hh);
+  for (let k = 0; k < W * Hh; k++) { const A = arch[k]; if (!A || A.idx !== 0) continue;
+    const d = A.along === 1 ? 1 : W, ends = [k - d, k + A.n * d];
+    ends.forEach((e, side) => { const dir = side ? d : -d;
+      for (let n = e, m = 0; m < 4 && n >= 0 && n < W * Hh && (M.block[n] === B.WALL || M.block[n] === B.DOOR); n += dir, m++) {
+        const off = wBase[k] - wBase[n]; if (off <= 0) break; fadeLift[n] = Math.max(fadeLift[n], Math.round(off * (1 - m / 4))); } }); }
+  // ... and the doorway itself is no taller than that wall: its top in line with the wall's, however high its step
+  const archDrop = new Int16Array(W * Hh);
+  for (let k = 0; k < W * Hh; k++) { const A = arch[k]; if (!A || A.idx !== 0) continue;
+    const d = A.along === 1 ? 1 : W, ns = [k - d, k + A.n * d].filter(n => n >= 0 && n < W * Hh && (M.block[n] === B.WALL || M.block[n] === B.DOOR));
+    const drop = ns.length ? Math.max(0, wBase[k] - Math.min(...ns.map(n => wBase[n]))) : 0;
+    for (let c = 0; c < A.n; c++) archDrop[k + c * d] = drop; }
+  // Of a wall cut down for room r, the parts that are that room's back wall (a band running west–east with the room to
+  // its south, or north–south with the room to its east) stay standing: bit n for slabRects(k)[n].
+  const inRoom = (ii, jj, r) => ii >= 0 && jj >= 0 && ii < W && jj < Hh && room[jj * W + ii] === r;
+  function keepMask(k, r) {
+    const i = k % W, j = (k / W) | 0; let m = 0;
+    slabRects(k).forEach((q, n) => {
+      const back = q.t === 'h' ? [-1, 0, 1].some(d => inRoom(i + d, j + 1, r)) && ![-1, 0, 1].some(d => inRoom(i + d, j - 1, r))
+        : q.t === 'v' ? [-1, 0, 1].some(d => inRoom(i + 1, j + d, r)) && ![-1, 0, 1].some(d => inRoom(i - 1, j + d, r)) : false;
+      if (back) m |= 1 << n;
+    });
+    // the side of an opening through the back wall (a stair coming up through it): a jamb, left whole
+    const rs = slabRects(k);
+    if (rs.some((q, n) => m >> n & 1 && q.t === 'h') && inRoom(i - 1, j, r)) m = (1 << rs.length) - 1;
+    if (rs.some((q, n) => m >> n & 1 && q.t === 'v') && inRoom(i, j - 1, r)) m = (1 << rs.length) - 1;
+    return m;
+  }
+  // Cut down for room r lying on one side of it only, a cell keeps to that side of its own wall there: [x0, y0, x1, y1].
+  function clipFor(k, r) {
+    const i = k % W, j = (k / W) | 0, rs = slabRects(k), side = (di, dj) => [-1, 0, 1].some(d => di ? inRoom(i + di, j + d, r) : inRoom(i + d, j + dj, r));
+    const v = rs.filter(q => q.t === 'v'), h = rs.filter(q => q.t === 'h'), c = [0, 0, 1, 1];
+    if (v.length && side(-1, 0) && !side(1, 0)) c[2] = Math.max(...v.map(q => q[2]));
+    if (v.length && side(1, 0) && !side(-1, 0)) c[0] = Math.min(...v.map(q => q[0]));
+    if (h.length && side(0, -1) && !side(0, 1)) c[3] = Math.max(...h.map(q => q[3]));
+    if (h.length && side(0, 1) && !side(0, -1)) c[1] = Math.min(...h.map(q => q[1]));
+    return c[0] || c[1] || c[2] < 1 || c[3] < 1 ? c : null;
+  }
+  // The floor a cut-down corner (a cell with no floor of its own to carry) stands on: the room's, beside it.
+  function stubLevel(k, r) {
+    const i = k % W, j = (k / W) | 0; let lv = -1;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) if (inRoom(i + di, j + dj, r)) lv = Math.max(lv, pLv[(j + dj) * W + i + di]);
+    return lv;
+  }
+  function wallSprite(t, i, j, k, cutDown, p = 0, keep = 0, tallH = 0, stubLo = 0, sb = 0, clip = null, out = false) {
+    const upC = !cutDown && !out && cornerUp[k] > 0 && cornerR[k] >= 0 && room[cornerR[k]] === lastRoom;
+    const ext = !cutDown && (t === B.WALL || t === B.ARCH) && wExt[k], fa = wFace[k], fe = cutDown ? 0 : wFeat[k];
+    const h = cutDown ? cutH[k] : t === B.GREAT ? GREAT_H : ext && out ? FACADE_H : WALL_H - (t === B.ARCH ? archDrop[k] : 0), lo = cutDown ? stubLo : upC ? Math.min(wLo[k], -cornerUp[k]) : wLo[k];
+    // what is cut down never reaches behind the back wall left standing (it belongs to the next room)
+    let rs = slabRects(k).map((q, n) => { const r = [...q]; r.keep = keep >> n & 1; return r; });
+    if (keep) {
+      let yMin = 0, xMin = 0;
+      for (const [n, q] of slabRects(k).entries()) if (keep >> n & 1) { if (q.t === 'h') yMin = Math.max(yMin, q[1]); if (q.t === 'v') xMin = Math.max(xMin, q[0]); }
+      rs = rs.map(r => r.keep ? r : Object.assign([Math.max(r[0], xMin), Math.max(r[1], yMin), r[2], r[3]], { keep: 0 })).filter(r => r[2] - r[0] > .01 && r[3] - r[1] > .01);
+    }
+    // cut down for a room on one side of it only: nothing of it reaches past its own wall on the far side
+    if (clip) rs = rs.map(r => r.keep ? r : Object.assign([Math.max(r[0], clip[0]), Math.max(r[1], clip[1]), Math.min(r[2], clip[2]), Math.min(r[3], clip[3])], { keep: 0 })).filter(r => r[2] - r[0] > .01 && r[3] - r[1] > .01);
+    // what is cut down inside a part left standing is gone (its coping would show through the corner)
+    if (keep) { const kept = rs.filter(r => r.keep); rs = rs.filter(r => r.keep || !kept.some(q => r[0] >= q[0] && r[1] >= q[1] && r[2] <= q[2] && r[3] <= q[3])); }
+    const shapes = [];
+    for (const [n, r] of rs.entries()) { const [x0, y0, x1, y1] = r;
+      if (r.keep) { shapes.push([x0, y0, lo, x1, y1, tallH, 'keep']); continue; }
+      shapes.push([x0, y0, lo, x1, y1, h, 'wall']);
+    }
+    if (cutDown) rs.forEach(([x0, y0, x1, y1], n) => { if (!rs[n].keep) shapes.push([Math.max(0, x0 - .05), Math.max(0, y0 - .05), h, Math.min(1, x1 + .05), Math.min(1, y1 + .05), h + 3, 'cap']); });   // (never past its own cell)   // a coping on the cut wall
+    const H = keep ? Math.max(h + 3, tallH) : h;
+    if (ext && (i + j) % 3 === 0 && !clip && !out) for (const [x0, y0, x1, y1] of rs.slice(0, 1)) shapes.push(['C', (x0 + x1) / 2, (y0 + y1) / 2, .14, h, h + 36, 'pale', .015]);   // a pinnacle (none on a wall stopped short)
+    // (an outer wall seen from inside sinks into the dark as every other wall does)
+    const fade0 = ext && out ? col => col : fadeWall, A = t === B.ARCH ? arch[k] : null, fl = t === B.ARCH ? -archDrop[k] : 0, fade = fl ? (col, z) => fade0(col, z - fl) : fade0;   // (a doorway raised on a step sinks into the dark at the same height as the wall it stands in)
+    // below its foot a face shows only where it looks onto lower floor (not down past a stair beside it)
+    const footAt = cutDown ? sb : wBase[k] + (upC ? cornerUp[k] : 0);
+    const dropTo = (ii, jj) => ii < W && jj < Hh && M.floor[jj * W + ii] ? Math.max(0, footAt - pLv[jj * W + ii] * STEP_PX) : 0;
+    const dropS = dropTo(i, j + 1), dropE = dropTo(i + 1, j);
+    const stairE = i + 1 < W && j + 1 < Hh && M.floor[(j + 1) * W + i + 1] === F.STEP && !wallish0(M.block[(j + 1) * W + i + 1]);   // (a stair rising beside it, to its south-east)
+    let rise = -1;                                                                    // the highest floor just in front of it
+    for (let dj = 0; dj <= 3; dj++) for (let di = 0; di <= 3; di++) { const ii = i + di, jj = j + dj; if (ii >= W || jj >= Hh) continue;
+      const q = jj * W + ii; if (M.floor[q] === F.STEP && !wallish0(M.block[q])) rise = Math.max(rise, pLv[q] * STEP_PX); }
+    const c = renderShapes(shapes, H, { lo, open: true, outline: false, color: (hit) => {
       const [sh, f, u, v, z] = hit, m = sh[6];
-      if (m === 'cap') return fade(f === 'T' ? [150, 138, 156] : [92, 80, 100], z);
+      if (z < -.5 && f !== 'T' && !cutDown && -z > (f === 'R' ? dropE : dropS) + .5) return null;
+      // nor where higher floor in front of it (a stair beside it) hides it: floors are painted first, so the wall
+      // would show over the steps
+      if (false) {                                                                       // (replaced: the steps are drawn over the walls behind them, in blocks())                // (not a doorway's own face: the stair's top step is its riser)                                // (only a face turned to the camera's left can stand behind the steps)                                            // (cut down, it is seen from the room above: the stair isn't drawn there)
+        const Pz = footAt + z;
+        for (let d = .05; d < 4; d += .1) { const qi = Math.floor(i + u + d / 2), qj = Math.floor(j + v + d / 2); if (qi >= W || qj >= Hh) break;
+          const q = qj * W + qi; if (qi <= i || M.floor[q] !== F.STEP || wallish0(M.block[q])) continue;   // (a stair off to its east, in front of it)   // only a stair's steps (drawn in the room)
+          if (pLv[q] * STEP_PX >= Pz + d * GY) return null; }
+      }
+      // a doorway cut down: its opening is clear, only the jambs stand (shut doors still show, half faded, over it)
+      if (cutDown && A && (m === 'cap' || m === 'wall') && z > -.5) {   // (below the threshold its face stays: stone down to the floor beyond)
+        const cc = Math.min(19, Math.max(0, Math.floor((A.along === 1 ? u : v) * 20))); if (openAt(A.idx * 20 + cc, 0, A.n, 1)) return null; }
+      if (m === 'cap') {
+        return fade(f === 'T' ? [150, 138, 156] : [92, 80, 100], z);
+      }
+      if (m === 'keep') {                                                              // a back wall left standing: plain stone
+        // (it stands on lower ground than the room it closes: it sinks into the dark as high up as that room's walls do)
+        const ko = Math.max(0, tallH - WALL_H);
+        if (f === 'T') return fade([34, 28, 36], tallH - ko);
+        const cc = Math.min(19, Math.max(0, Math.floor((f === 'R' ? v : u) * 20)));
+        return fade(wallPaint(f, cc, tallH - z, WALL_H, i, j, fa, 0, 0).map(x => x * LIT[f === 'R' ? 'R' : 'L']), z - ko);
+      }
       if (m !== 'wall') return undefined;
       if (f === 'T') return fade(cutDown ? [70, 60, 76] : [34, 28, 36], h);
-      const cc = Math.min(19, Math.max(0, Math.floor((f === 'R' ? v : u) * 20))), r = h - z;
-      if (r >= h) { const col = ashlar(cc, r, i, j, h - lo); return fade(col.map(x => x * LIT[f === 'R' ? 'R' : 'L']), z); }   // reaching down to lower ground
+      const cc = Math.min(19, Math.max(0, Math.floor((f === 'R' ? v : u) * 20)));
+      const hh = ext && out ? WALL_EXT : h, r = hh - z;
+      if (r >= hh) { const col = ashlar(cc, r, i, j, h - lo); return fade(col.map(x => x * LIT[f === 'R' ? 'R' : 'L']), z); }   // reaching down to lower ground
       let col;
       if (A) {
         const facing = (f === 'L') === (A.along === 1);
+        // the slab's end faces between the cells of one doorway stand in its opening, like bars: not there
+        if (!facing && f !== 'T' && openAt(A.idx * 20 + 19, z, A.n)) return null;
         if (facing) {
           const gx = A.idx * 20 + cc;
           if (openAt(gx, z, A.n)) { if (A.door < 0) return null; col = doorPx(gx, z, A.n, p); if (!col) return null; return fade(col.map(x => x * LIT[f]), z); }
           if (openAt(gx, z, A.n, 2.5)) { const kst = Math.abs(gx + .5 - A.n * 10) < 2.5 && z > 40; col = kst ? [168, 160, 154] : [146, 138, 134]; return fade(col.map(x => x * LIT[f]), z); }
         }
       }
+      // the end faces between the great window's cells stand in its glass, like bars: where the glass (or its broken hole) is, not there
+      if (t === B.GREAT && f !== 'L' && f !== 'T' && !cutDown) { const g2 = greatGlass((i - great.i0) * 20 + 19, r, h, great.n, broken); if (g2 && (g2 === 'HOLE' || g2[0] !== 164 || g2[1] !== 152)) return null; }   // (but its stone frame stays)
       if (t === B.GREAT && f === 'L' && !cutDown) { const gl = greatGlass((i - great.i0) * 20 + cc, r, h, great.n, broken); if (gl === 'HOLE') return null; if (gl) return gl; }
-      col = wallPaint(f, cc, r, h, i, j, fa, fe, wPart[k]);
+      col = wallPaint(f, cc, r, hh, i, j, fa, fe, wPart[k]);
       if (col.glow) return col;
       return fade(col.map(x => x * LIT[f === 'R' ? 'R' : 'L']), z);
     } });
@@ -710,30 +978,52 @@ export function makeWorld(M, extra = {}) {
       for (let q = 0; q < 3; q++) put(x - 1 + q, y, [36, 34, 38]); put(x, y - 1, [36, 34, 38]);
       for (let q = 2; q < 5; q++) put(x, y - q, [222, 214, 196]); put(x, y - 5, [255, 196, 90]); put(x, y - 6, [255, 246, 200]);
     }
-    c.hTop = h; return c;
+    c.hTop = H; return c;
   }
   // A low wall round open ground: coursed stone under a pale coping.
+  // The wall round the grounds: a stone plinth under a coping, iron railings on it, a stone pier every eight cells and at
+  // every corner, capped and with a ball on top.
+  const lowPier = k => { const i = k % W, j = (k / W) | 0, b = slab[k]; return (b & 3) && (b & 12) || post[k] || (i + j) % 8 === 0; };
   function lowSprite(k, i, j) {
-    const h = LOW_H, lo = wLo[k], shapes = slabRects(k).map(([x0, y0, x1, y1]) => [x0, y0, lo, x1, y1, h - 3, 'wall']);
-    for (const [x0, y0, x1, y1] of slabRects(k)) shapes.push([x0 - .05, y0 - .05, h - 3, x1 + .05, y1 + .05, h, 'cap']);
+    const h0 = 12, pier = lowPier(k), h = pier ? 46 : 32, lo = wLo[k], rs = slabRects(k), shapes = rs.map(([x0, y0, x1, y1]) => [x0, y0, lo, x1, y1, h0 - 3, 'wall']);
+    for (const [x0, y0, x1, y1] of rs) shapes.push([x0 - .05, y0 - .05, h0 - 3, x1 + .05, y1 + .05, h0, 'cap']);
+    for (const [x0, y0, x1, y1] of rs) { const along = x1 - x0 > y1 - y0, mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+      for (let t = .1; t < 1; t += .2) shapes.push(along ? ['C', x0 + (x1 - x0) * t, my, .028, h0, 29, 'iron', .02] : ['C', mx, y0 + (y1 - y0) * t, .028, h0, 29, 'iron', .02]);
+      shapes.push(along ? [x0, my - .03, 26, x1, my + .03, 28, 'iron'] : [mx - .03, y0, 26, mx + .03, y1, 28, 'iron']);
+      shapes.push(along ? [x0, my - .03, 15, x1, my + .03, 16.5, 'iron'] : [mx - .03, y0, 15, mx + .03, y1, 16.5, 'iron']); }
+    if (pier) { const [x0, y0, x1, y1] = rs[0] || [.35, .35, .65, .65], cx = rs.length > 1 ? (rs[0][0] + rs[0][2]) / 2 : (x0 + x1) / 2, cy = rs.length > 1 ? (rs[1] ? (rs[1][1] + rs[1][3]) / 2 : (y0 + y1) / 2) : (y0 + y1) / 2;
+      const px = Math.max(.25, Math.min(.75, cx)), py = Math.max(.25, Math.min(.75, cy));
+      shapes.push([px - .24, py - .24, lo, px + .24, py + .24, 36, 'wall'], [px - .29, py - .29, 36, px + .29, py + .29, 39, 'cap'], ['C', px, py, .13, 39, 46, 'cap', .03]); }
     const c = renderShapes(shapes, h, { lo, open: true, outline: false, color: hit => {
       const [sh, f, u, v, z] = hit;
-      if (sh[6] === 'cap') return f === 'T' ? [150, 138, 156] : f === 'L' ? [118, 106, 126] : [92, 80, 100];
+      if (sh[6] === 'iron') return undefined;
+      if (sh[6] === 'cap') return f === 'T' ? [150, 138, 156] : f === 'L' ? [118, 106, 126] : f === 'C' ? [126, 114, 134] : [92, 80, 100];
       if (f === 'T') return [76, 66, 82];
-      const cc = Math.floor((f === 'R' ? v : u) * 20), r = Math.floor(h - 3 - z), row = Math.floor(r / 5), uu = cc + (row & 1) * 5, kk = LIT[f === 'R' ? 'R' : 'L'];
+      const cc = Math.floor((f === 'R' ? v : u) * 20), r = Math.floor(h0 - 3 - z + 40), row = Math.floor(r / 5), uu = cc + (row & 1) * 5, kk = LIT[f === 'R' ? 'R' : 'L'];
       if (r % 5 === 0 || uu % 10 === 0) return [46 * kk, 38 * kk, 52 * kk];
       return [100, 88, 108].map(x => x * kk * (.85 + hash(Math.floor(uu / 10) + i * 7, row + j * 3, 4) * .2));
     } });
     c.hTop = h; return c;
   }
-  function sprite(t, i, j, k, cutDown) {
+  // What a cell shows depends on a few numbers (a door's swing, how it is cut down, where he is): remembered per cell, so
+  // the sprite's key is only built again when one of them changes (not for every cell, every frame).
+  const memo = new Array(W * Hh * 2); let memoGen = 0;
+  function sprite(t, i, j, k, cutDown, keep = 0, tallH = 0, stubLo = 0, sb = 0, clip = null) {
+    const out = !cutDown && !showAll && cur >= 0 && openRoom[cur] === 1 && wExt[k] === 1;
+    const A0 = t === B.ARCH ? arch[k] : null, q0 = A0 && A0.door >= 0 ? Math.round(doors[A0.door].p * 8) : 0, up0 = cornerUp[k] && cornerR[k] >= 0 && room[cornerR[k]] === lastRoom ? 1 : 0;
+    const c0 = clip ? clip[0] + clip[1] * 3 + clip[2] * 9 + clip[3] * 27 : -1, m = memo[k * 2 + (cutDown ? 1 : 0)];
+    if (m && m.g === memoGen && m.t === t && m.keep === keep && m.tallH === tallH && m.stubLo === stubLo && m.sb === sb && m.c === c0 && m.q === q0 && m.out === out && m.up === up0) return m.s;
+    const res = spriteBuild(t, i, j, k, cutDown, keep, tallH, stubLo, sb, clip, out);
+    memo[k * 2 + (cutDown ? 1 : 0)] = { g: memoGen, t, keep, tallH, stubLo, sb, c: c0, q: q0, out, up: up0, s: res }; return res;
+  }
+  function spriteBuild(t, i, j, k, cutDown, keep, tallH, stubLo, sb, clip, out) {
     let key, make;
     if (isWall(t)) {
       const A = t === B.ARCH ? arch[k] : null, q = A && A.door >= 0 ? Math.round(doors[A.door].p * 8) : 0;
-      key = (cutDown ? 'c' + cutH[k] : 'w') + t + '.' + slab[k] + '.' + post[k] + '.' + wFace[k] + (cutDown ? 0 : wFeat[k] + '.' + wPart[k] + '.' + wExt[k] + '.' + (wExt[k] && (i + j) % 3 === 0 ? 1 : 0) + '.' + wLo[k]) + ':' + (t === B.GREAT && !cutDown ? i : (i * 7 + j * 3) % 5) + (A ? ':a' + A.n + ',' + A.idx + ',' + A.door + ',' + q : '');
-      make = () => wallSprite(t, i, j, k, cutDown, q / 8);
+      key = (cutDown ? 'c' + cutH[k] : 'w') + t + '.' + slab[k] + '.' + post[k] + '.' + wFace[k] + (cutDown ? 0 : wFeat[k] + '.' + wPart[k] + '.' + wExt[k] + '.' + (wExt[k] && (i + j) % 3 === 0 ? 1 : 0) + '.' + wLo[k]) + ':' + (t === B.GREAT && !cutDown ? i : (i * 7 + j * 3) % 5) + (A ? ':a' + A.n + ',' + A.idx + ',' + A.door + ',' + q : '') + jointKey(k) + (cornerUp[k] && cornerR[k] >= 0 && room[cornerR[k]] === lastRoom && !cutDown ? ':u' + cornerUp[k] : '') + (keep ? ':k' + keep + ',' + tallH : '') + (stubLo ? ':l' + stubLo : '') + (fadeLift[k] ? ':f' + fadeLift[k] : '') + (cutDown ? ':b' + sb : '') + (clip ? ':c' + clip.map(c => Math.round(c * 10)).join('') : '') + (out ? ':out' : '');
+      make = () => wallSprite(t, i, j, k, cutDown, q / 8, keep, tallH, stubLo, sb, clip, out);
     }
-    else if (t === B.LOW) { key = 'low' + ((i * 7 + j * 3) % 4) + ':' + slab[k] + '.' + post[k] + '.' + wLo[k]; make = () => lowSprite(k, i, j); }
+    else if (t === B.LOW) { key = 'low' + ((i * 7 + j * 3) % 4) + ':' + slab[k] + '.' + post[k] + '.' + wLo[k] + jointKey(k) + (lowPier(k) ? 'p' : ''); make = () => lowSprite(k, i, j); }
     else if (t === B.COLUMN) { const v = M.vari[k]; key = 'col' + v; make = () => columnSprite(v === 1 ? COLH_LOW : COLH, v === 1, v === 2, v === 4); }
     else { const P = M.props[M.pi[k]], ci = i - P.x, cj = j - P.y, st = PROPS[P.type].statue; key = P.type + P.rot + ':' + ci + ',' + cj + ':' + (st ? P.seed % 3 : P.seed % 4);
       const open = sky(i, j);                                                            // under the sky nothing fades: there is no vault
@@ -742,18 +1032,51 @@ export function makeWorld(M, extra = {}) {
     let s = sprites.get(key); if (!s) { s = make(); sprites.set(key, s); } return s;
   }
   const roomAt = (x, y) => { const i = Math.floor(x / CELL), j = Math.floor(y / CELL); return i >= 0 && j >= 0 && i < W && j < Hh ? room[j * W + i] : -1; };
-  let lastRoom = -1;
   // Everything standing in view, as { d: depth, draw(g) } to sort with the characters.
   // pX, pY: the priest's middle on screen; pD: his depth; wx, wy: where he stands in the world.
   // diorama: the whole building at once, every wall standing in front of a room cut down (the map's model).
   // How see-through each cell's thing is now (1 solid … 0 gone): eased toward its target every frame, so nothing pops.
   const fadeA = new Float32Array(W * Hh).fill(1); let lastT = 0;
+  // Out in the open the church stands whole (no wall cut down, no roof faded): when it hides him, his shape is drawn over it.
+  let hiddenNow = false;
+  const [holeC, holeG] = canvas(8, 8), [maskC, maskG] = canvas(8, 8);
+  // ---- the wind. Trees sway (each drawn whole, leaning from its foot), and the tufts of tall grass bend with the wind and
+  // away from whoever walks through them, springing back after.
+  const SWAY = { has: t => !!PROPS[t]?.flora };                                         // (every tree and plant of the grounds)
+  const treeArt = new Map();
+  function treeSprite(n) {
+    let T = treeArt.get(n); if (T) return T;
+    { const P = M.props[n], A = floraArt(P.type, P.seed), k = P.y * W + P.x, fx = 20 * (P.x - P.y), fy = GY * (P.x + P.y) + GY - liftOf(k);   // its cell's middle
+      T = { c: A.c, x: fx - A.ax, y: fy - A.ay, foot: A.ay, cut: A.cut, d: (P.x + P.y + 1) * CELL, amp: A.amp, ph: hash(P.x, P.y, 3) * 6.3 };
+      treeArt.set(n, T); return T; }
+    const P = M.props[n], [fw, fh] = footprint(P.type, P.rot), parts = []; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (let cj = 0; cj < fh; cj++) for (let ci = 0; ci < fw; ci++) { const i = P.x + ci, j = P.y + cj, k = j * W + i;
+      const sp = sprite(B.PROP, i, j, k, false), h = sp.hTop ?? (sp.height - DH), x = 20 * (i - j) - 20, y = GY * (i + j) - h - liftOf(k);
+      parts.push([sp, x, y]); x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + sp.width); y1 = Math.max(y1, y + sp.height); }
+    const [c, g] = canvas(x1 - x0, y1 - y0); for (const [sp, x, y] of parts) g.drawImage(sp, x - x0, y - y0);
+    const foot = GY * (P.x + P.y + (fw + fh) / 2) - liftOf(P.y * W + P.x) - y0;      // the row of its trunk's foot
+    const leaves = { tree: 80, pine: 22, bigoak: 112, cypress: 10, birch: 50, willow: 16, poplar: 16 }[P.type] || 30, cut = Math.max(1, Math.round(foot - leaves * ZS));   // the row where its leaves begin
+    T = { c, x: x0, y: y0, foot, cut, d: (P.x + fw - 1 + P.y + fh - 1 + 1) * CELL, amp: { cypress: 1.2, pine: 2, poplar: 1.8, birch: 2.2, willow: 3.4 }[P.type] || 2.6, ph: hash(P.x, P.y, 3) * 6.3 };
+    treeArt.set(n, T); return T;
+  }
+  const wind = (t, x, y) => Math.sin(t * 1.3 + x * .011 + y * .007) * .7 + Math.sin(t * .47 + x * .004) * .5 + Math.sin(t * 3.1 + y * .02) * .12;
+  // tufts of grass: frames of a few clumps, each leaning from -1 to 1
+  const TUFT_F = 9, tuftArt = [];
+  for (let v = 0; v < 3; v++) { const fr = []; for (let f = 0; f < TUFT_F; f++) {
+    const lean = (f / (TUFT_F - 1) * 2 - 1) * 5, [c, g] = canvas(24, 20);
+    for (let b = 0; b < 7; b++) { const bx = 6 + hash(v, b, 1) * 12, h = 7 + hash(v, b, 2) * 9, sh = .85 + hash(v, b, 3) * .3;
+      for (let k = 0; k < h; k++) { const t = k / h, x = Math.round(bx + lean * t * t * (h / 14)), y = 19 - k;
+        g.fillStyle = `rgb(${(40 + 50 * t) * sh | 0},${(58 + 64 * t) * sh | 0},${(34 + 24 * t) * sh | 0})`; g.fillRect(x, y, 1, 1); } }
+    fr.push(c); } tuftArt.push(fr); }
+  const tufts = (M.grass || []).map(([gx, gy, v]) => ({ gx, gy, v, b: 0, k: Math.floor(gy) * W + Math.floor(gx) }));
   function blocks(ox, oy, vw, vh, pX, pY, pD, wx, wy, diorama = false) {
+    hiddenNow = false;
     const r = diorama ? -1 : roomAt(wx, wy); if (r >= 0) lastRoom = r;
+    const inDoor = !diorama && (() => { const i = Math.floor(wx / CELL), j = Math.floor(wy / CELL); return i >= 0 && j >= 0 && i < W && j < Hh && M.block[j * W + i] === B.ARCH; })();
     if (diorama) showAll = true;
     const now = performance.now(), dt = Math.min(.1, (now - (lastT || now)) / 1000), ease = diorama ? 1 : Math.min(1, dt * 7); lastT = now;
     const hi = doorNear(wx, wy, 5);                                                  // the door near enough to notice
-    const out = [], X0 = -ox - 40, X1 = -ox + vw + 40, Y0 = -oy - DH, Y1 = -oy + vh + 200;
+    const out = [], swaying = new Set(), X0 = -ox - 40, X1 = -ox + vw + 40, Y0 = -oy - DH, Y1 = -oy + vh + 200;
     const ij = (X, Y) => [(Y / GY + X / 20) / 2, (Y / GY - X / 20) / 2];
     const cs = [ij(X0, Y0), ij(X1, Y0), ij(X0, Y1), ij(X1, Y1)];
     const i0 = Math.max(0, Math.floor(Math.min(...cs.map(c => c[0])))), i1 = Math.min(W - 1, Math.ceil(Math.max(...cs.map(c => c[0]))));
@@ -767,23 +1090,45 @@ export function makeWorld(M, extra = {}) {
     if (!diorama) for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const k = j * W + i; if (M.block[k] === B.PROP && !covered.has(M.pi[k]) && coverAt(i, j, k)) covered.add(M.pi[k]); }
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const k = j * W + i, t = M.block[k]; if (!t || !shown(k)) continue;
+      if (!diorama && t === B.PROP && SWAY.has(M.props[M.pi[k]].type)) { swaying.add(M.pi[k]); continue; }   // (drawn whole, below)
+      if (!diorama && cur >= 0 && openRoom[cur] === 1 && isWall(t) && !wExt[k]) continue;   // from outside, a wall showing only its inside face
       let d = (i + j + 1) * CELL;
       const wall = isWall(t), A = t === B.ARCH ? arch[k] : null, lit = A && A.door >= 0 && A.door === hi;
-      const full = sprite(t, i, j, k, false), h = full.hTop ?? (full.height - DH), base = wall || t === B.LOW ? wBase[k] : liftOf(k);
+      // seen from open ground, a wall whose run carries on into a room not shown stops at the low wall it meets
+      let endClip = null;
+      if (wall && !A && !diorama && cur >= 0 && openRoom[cur]) { const sh = n => n >= 0 && n < W * Hh && shown(n), rs = slabRects(k);
+        const hy = rs.filter(r => r.t === 'h'), vx = rs.filter(r => r.t === 'v');
+        if (wallish0(M.block[k - W]) && !sh(k - W) && hy.length) endClip = [0, Math.min(...hy.map(r => r[1])), 1, 1];
+        else if (wallish0(M.block[k - 1]) && !sh(k - 1) && vx.length && rs.some(r => r.t === 'h')) endClip = [Math.min(...vx.map(r => r[0])), 0, 1, 1]; }
+      const full = endClip ? sprite(t, i, j, k, false, 0, 0, 0, 0, endClip) : sprite(t, i, j, k, false), h = full.hTop ?? (full.height - DH), base = wall || t === B.LOW ? wBase[k] + (wall && cornerUp[k] && cornerR[k] >= 0 && room[cornerR[k]] === lastRoom && !(cur >= 0 && openRoom[cur]) ? cornerUp[k] : 0) : liftOf(k);
       const x = 20 * (i - j) - 20 + ox, y = GY * (i + j) - h + oy - base;
       if (x > vw || x < -40 || y > vh || y + full.height < 0) continue;
       if (t === B.PROP && PROPS[M.props[M.pi[k]].type].hang) d += CELL * .9;           // hanging things are drawn over whoever walks beneath
       // What it should be: a wall in front of the room he is in sinks to its coping, as in Diablo; anything tall that
       // stands between the camera and him fades (a wall to its coping, a thing to a ghost of itself).
-      const inFront = wall && (diorama ? frontOf.has(k) : lastRoom >= 0 && frontOf.get(k)?.has(lastRoom));
-      const covers = !diorama && h > 24 && d > pD + CELL * .3 && x < PX1 && x + 40 > PX0 && y < PY1 && y + full.height > PY0;
+      const outside = !diorama && cur >= 0 && openRoom[cur] === 1 && wall;
+      let inFront = !outside && wall && (diorama ? frontOf.has(k) : lastRoom >= 0 && frontOf.get(k)?.has(lastRoom));
+      // cut down for the room he is in: what of it is that room's back wall stays up, and a corner stands on its floor
+      // (standing in a doorway he is framed by it: the walls round it don't sink for him)
+      const covers = !diorama && !inDoor && h > 24 && d > pD + CELL * .3 && x < PX1 && x + 40 > PX0 && y < PY1 && y + full.height > PY0;
+      let keep = 0, sb = pFrom[k] >= 0 && !A ? pLv[k] * STEP_PX : base;
+      if (inFront && !diorama && !A) {
+        keep = keepMask(k, lastRoom);
+        if (wall && covers && keep !== (1 << slabRects(k).length) - 1) keep = 0;
+        if (keep && keep === (1 << slabRects(k).length) - 1) { inFront = false; keep = 0; }
+        if (pFrom[k] < 0) { const lv = stubLevel(k, lastRoom); if (lv >= 0) sb = lv * STEP_PX; }
+        if (keep) sb = Math.max(sb, roomLow[lastRoom]);                               // (a corner left standing stands on this room's floor, not below it)
+      }
       let target = 1;
-      if (inFront || (wall && covers)) target = A && A.door >= 0 && !doors[A.door].open ? .5 : 0;
+      if (outside && covers) hiddenNow = true;
+      if (inFront || (wall && covers && !outside)) target = A && A.door >= 0 && !doors[A.door].open ? .5 : 0;
       else if (t === B.PROP ? covered.has(M.pi[k]) : covers) target = .42;
       const a = fadeA[k] += (target - fadeA[k]) * ease;
-      const stub = wall && a < .98 ? sprite(t, i, j, k, true) : null;
+      // a cut wall still reaches down to the lowest floor before it, as the whole one does
+      const tallH = keep ? Math.max(base + h, Math.max(0, stubLevel(k, lastRoom)) * STEP_PX + h) - sb : 0,   // (as tall as the back wall it carries on, standing on this room's floor)
+       stubLo = Math.min(0, Math.max(A ? archLow(k, sb) : Math.min(0, wBase[k] + wLo[k] - sb, runLow[k] >= 0 ? runLow[k] - sb : 0), lastRoom >= 0 ? roomLow[lastRoom] - sb : -1e9)), stub = wall && a < .98 ? sprite(t, i, j, k, true, keep, tallH, stubLo, sb, inFront && !diorama && !A ? clipFor(k, lastRoom) : null) : null;
       out.push({ d, draw: g => {
-        if (stub) { const hs = stub.hTop ?? (stub.height - DH), sb = pFrom[k] >= 0 && !A ? pLv[k] * STEP_PX : base; g.drawImage(stub, x, GY * (i + j) - hs + oy - sb); }
+        if (stub) { const hs = stub.hTop ?? (stub.height - DH); g.drawImage(stub, x, GY * (i + j) - hs + oy - sb); }
         if (t === B.COLUMN && a < .98) {                                              // a pier only fades above: its foot stays solid
           const keep = Math.min(full.height, DH + 46), cut = full.height - keep;
           g.drawImage(full, 0, cut, full.width, keep, x, y + cut, full.width, keep);
@@ -793,6 +1138,74 @@ export function makeWorld(M, extra = {}) {
         else if (a > .02) { if (a < .98) g.globalAlpha = a; g.drawImage(full, x, y); g.globalAlpha = 1; }
         if (lit) { g.globalCompositeOperation = 'lighter'; g.globalAlpha = (.2 + .08 * Math.sin(now / 260)) * Math.max(.4, a); g.drawImage(full, x, y); g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; }
       } });
+    }
+    // The steps of a stair in this room are drawn again over what stands behind them (the walls either side of its top),
+    // one cell at a time in depth order, so whoever climbs it is still drawn over them.
+    // the trees, swaying: the trunk stands still, the leaves lean (a shear from where they begin)
+    const tw = now / 1000;
+    for (const n of swaying) { const T = treeSprite(n), x = T.x + ox, y = T.y + oy, a = covered.has(n) ? .45 : 1;
+      if (x > vw + 8 || y > vh || x + T.c.width < -8 || y + T.c.height < 0) continue;            // (off screen: not drawn)
+      const s = T.amp ? (wind(tw + T.ph * .1, T.x, T.y) * T.amp + Math.sin(tw * 2.3 + T.ph) * .25 * T.amp / 2.4) / Math.max(30, T.cut) : 0, w = T.c.width, hc = T.c.height, cut = T.cut;
+      out.push({ d: T.d, draw: g => { g.save(); if (a < 1) g.globalAlpha = a;
+        g.drawImage(T.c, 0, cut, w, hc - cut, Math.round(x), Math.round(y) + cut, w, hc - cut);                    // the trunk, still
+        g.setTransform(1, 0, -s, 1, Math.round(x + s * cut), Math.round(y)); g.drawImage(T.c, 0, 0, w, cut, 0, 0, w, cut);   // the leaves, swaying
+        g.restore(); } }); }
+    // the grass, bending
+    if (!diorama && tufts.length) { const pi = wx / CELL, pj = wy / CELL;
+      for (const G of tufts) { const i = Math.floor(G.gx), j = Math.floor(G.gy); if (i < i0 || i > i1 || j < j0 || j > j1 || !shown(G.k)) continue;
+        const sx = 20 * (G.gx - G.gy), sy = GY * (G.gx + G.gy) - liftOf(G.k); if (sx + ox < -30 || sx + ox > vw + 30 || sy + oy < -30 || sy + oy > vh + 30) continue;
+        const di = G.gx - pi, dj = G.gy - pj, dd = Math.hypot(di, dj);
+        const push = dd < 1.1 ? (1 - dd / 1.1) * Math.sign((di - dj) || 1) * 1.6 : 0;    // away from him, across the screen
+        G.b += (push - G.b) * Math.min(1, (Math.abs(push) > Math.abs(G.b) ? 18 : 3) * Math.min(.1, ease / 7 + .016));
+        const lean = Math.max(-1, Math.min(1, wind(tw, sx, sy) * .55 + G.b)), f = Math.round((lean + 1) / 2 * (TUFT_F - 1));
+        const spr = tuftArt[G.v][f], X = Math.round(sx + ox - 12), Y = Math.round(sy + oy - 19);
+        out.push({ d: (G.gx + G.gy) * CELL, draw: g => g.drawImage(spr, X, Y) }); } }
+    if (!diorama && cur >= 0) for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const k = j * W + i; if (M.floor[k] !== F.STEP || M.block[k] || room[k] !== cur) continue;
+      const up = LV[k] * STEP_PX, lvAt = n => M.floor[n] && !wallish0(M.block[n]) ? LV[n] * STEP_PX : up;
+      const dS = Math.max(0, up - lvAt(k + W)), dE = Math.max(0, up - lvAt(k + 1));
+      const X = 20 * (i - j) + ox, Y = GY * (i + j) + oy - up;
+      out.push({ d: (i + j) * CELL + 1, draw: g => {
+        g.save(); g.beginPath(); g.moveTo(X - 20, Y + GY); g.lineTo(X, Y); g.lineTo(X + 20, Y + GY); g.lineTo(X + 20, Y + GY + dE); g.lineTo(X, Y + 2 * GY + dE);
+        g.lineTo(X, Y + 2 * GY + dS); g.lineTo(X - 20, Y + GY + dS); g.closePath(); g.clip();
+        const bx0 = X - 21, by0 = Y - 1, bx1 = X + 21, by1 = Y + 2 * GY + Math.max(dS, dE) + 1;
+        for (let cy = Math.floor((by0 - oy) / CS); cy <= Math.floor((by1 - oy) / CS); cy++) for (let cx = Math.floor((bx0 - ox) / CS); cx <= Math.floor((bx1 - ox) / CS); cx++) {
+          const c = floorChunks.get(cx + ',' + cy); if (c) g.drawImage(c, cx * CS + ox, cy * CS + oy); }
+        g.restore(); } });
+    }
+    if (!diorama && cur >= 0 && openRoom[cur]) {                                    // out in the open: the roofs
+      if (!roofs) buildRoofs();
+      for (const R of roofs) { const x = R.x + ox, y = R.y + oy; if (x > vw || y > vh || x + R.c.width < 0 || y + R.c.height < 0) continue;
+        // (a roof standing between the camera and him: his shape is drawn over it)
+        const hit = (px, py) => { const u = Math.round(px - x), v = Math.round(py - y); return u >= 0 && v >= 0 && u < R.c.width && v < R.c.height && R.mask[v * R.c.width + u]; };
+        const covers = R.d > pD && [[0, -20], [0, 0], [-8, -10], [8, -10], [0, 18]].some(([dx, dy]) => hit(pX + dx, pY + dy));
+        // where it hides him, a soft round hole opens in it round him (as Diablo shows its walls), easing open and shut
+        R.hole = (R.hole || 0) + ((covers ? 1 : 0) - (R.hole || 0)) * ease; const hr = R.hole;
+        out.push({ d: R.d, draw: g => { const sx = Math.max(0, -x), sy = Math.max(0, -y), sw = Math.min(R.c.width - sx, vw - x - sx), sh = Math.min(R.c.height - sy, vh - y - sy);
+          if (sw <= 0 || sh <= 0) return;
+          if (hr < .02) { g.drawImage(R.c, sx, sy, sw, sh, x + sx, y + sy, sw, sh); return; }
+          const W2 = Math.ceil(vw), H2 = Math.ceil(vh); if (holeC.width !== W2 || holeC.height !== H2) { holeC.width = W2; holeC.height = H2; }
+          holeG.globalCompositeOperation = 'source-over'; holeG.clearRect(0, 0, W2, H2); holeG.drawImage(R.c, sx, sy, sw, sh, x + sx, y + sy, sw, sh);
+          // the hole only over open ground (and what stands on it, up to a man's height and a tree's): never into the church,
+          // not even softly at its edge (the floor under the walls there is the rooms' own)
+          const cx = pX, cy = pY - 12, r1 = 380 * hr;
+          if (maskC.width !== W2 || maskC.height !== H2) { maskC.width = W2; maskC.height = H2; }
+          maskG.globalCompositeOperation = 'source-over'; maskG.clearRect(0, 0, W2, H2); maskG.fillStyle = '#fff';
+          const ci = Math.floor(wx / CELL), cj = Math.floor(wy / CELL);
+          for (let j = cj - 18; j <= cj + 18; j++) for (let i = ci - 18; i <= ci + 18; i++) { if (i < 0 || j < 0 || i >= W || j >= Hh || !sky(i, j) || M.block[j * W + i] && isWall(M.block[j * W + i])) continue;
+            const X = 20 * (i - j) + ox, Y = GY * (i + j) + oy - pLv[j * W + i] * STEP_PX, up = 76;
+            maskG.beginPath(); maskG.moveTo(X, Y - up); maskG.lineTo(X + 20.5, Y + GY - up); maskG.lineTo(X + 20.5, Y + GY); maskG.lineTo(X, Y + 2 * GY + .5); maskG.lineTo(X - 20.5, Y + GY); maskG.lineTo(X - 20.5, Y + GY - up); maskG.closePath(); maskG.fill(); }
+          // a raised floor inside (the library, the organ loft) stands up in front of the path behind it: never shown through
+          maskG.globalCompositeOperation = 'destination-out';
+          for (let j = cj - 12; j <= cj + 22; j++) for (let i = ci - 12; i <= ci + 22; i++) { if (i < 0 || j < 0 || i >= W || j >= Hh || !pFloor[j * W + i] || sky(i, j)) continue;
+            const up = pLv[j * W + i] * STEP_PX; if (up <= 2 * STEP_PX) continue;
+            const X = 20 * (i - j) + ox, Y = GY * (i + j) + oy - up, dn = up - 2 * STEP_PX;
+            maskG.beginPath(); maskG.moveTo(X, Y - 1); maskG.lineTo(X + 21, Y + GY); maskG.lineTo(X + 21, Y + GY + dn); maskG.lineTo(X, Y + 2 * GY + dn + 1); maskG.lineTo(X - 21, Y + GY + dn); maskG.lineTo(X - 21, Y + GY); maskG.closePath(); maskG.fill(); }
+          maskG.globalCompositeOperation = 'source-over';
+          const gr = maskG.createRadialGradient(cx, cy, r1 * .55, cx, cy, r1); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+          maskG.globalCompositeOperation = 'destination-in'; maskG.fillStyle = gr; maskG.fillRect(0, 0, W2, H2);
+          holeG.globalCompositeOperation = 'destination-out'; holeG.drawImage(maskC, 0, 0); holeG.globalCompositeOperation = 'source-over';
+          g.drawImage(holeC, 0, 0); } }); }
     }
     if (diorama) showAll = false;
     return out;
@@ -827,10 +1240,11 @@ export function makeWorld(M, extra = {}) {
     if (!opt.noFog) fog(g, ox, oy, vw, vh, t);
     const w = Math.ceil(vw / 2) + 1, h = Math.ceil(vh / 2) + 1;
     if (lb.width !== w || lb.height !== h) { lb.width = w; lb.height = h; }
-    lg.globalCompositeOperation = 'source-over'; lg.globalAlpha = 1; lg.fillStyle = opt.amb || AMB; lg.fillRect(0, 0, w, h);
+    lg.globalCompositeOperation = 'source-over'; lg.globalAlpha = 1; const moon = !showAll && cur >= 0 && openRoom[cur] === 1;                          // out in the open: the moon lights everything alike
+    lg.fillStyle = opt.amb || (moon ? 'rgb(140,138,208)' : AMB); lg.fillRect(0, 0, w, h);
     lg.globalCompositeOperation = 'lighter';
     for (const b of beams) {
-      if ((b.rooms && !showAll && cur >= 0 && !b.rooms.includes(cur)) || b.x1 + ox < 0 || b.x0 + ox > vw || b.y1 + oy < 0 || b.y0 + oy > vh) continue;
+      if ((moon && b.sky) || (b.rooms && !showAll && cur >= 0 && !b.rooms.includes(cur)) || b.x1 + ox < 0 || b.x0 + ox > vw || b.y1 + oy < 0 || b.y0 + oy > vh) continue;
       for (const [q, col] of b.scr) {
         lg.fillStyle = `rgb(${col[0] * b.k | 0},${col[1] * b.k | 0},${col[2] * b.k | 0})`;
         lg.beginPath(); q.forEach(([x, y], n) => n ? lg.lineTo((x + ox) / 2, (y + oy) / 2) : lg.moveTo((x + ox) / 2, (y + oy) / 2)); lg.closePath(); lg.fill();
@@ -875,21 +1289,11 @@ export function makeWorld(M, extra = {}) {
       const i0 = Math.floor((o.x - r) / CELL), i1 = Math.floor((o.x + r) / CELL), j0 = Math.floor((o.y - r) / CELL), j1 = Math.floor((o.y + r) / CELL);
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
         const k = j * W + i, b = i >= 0 && j >= 0 && i < W && j < Hh ? M.block[k] : 0;
-        if (b && (slab[k] || post[k]) && wallish0(b)) {                                   // a wall: only its slab stops him
+        if (b && wallish0(b)) {
           if (b === B.ARCH && !shut(k)) continue;
-          for (const [x0, y0, x1, y1] of slabRects(k)) {
-            const ax = (i + x0) * CELL, ay = (j + y0) * CELL, bx = (i + x1) * CELL, by = (j + y1) * CELL;
-            const nx = Math.max(ax, Math.min(o.x, bx)), ny = Math.max(ay, Math.min(o.y, by)), dx = o.x - nx, dy = o.y - ny, dd = Math.hypot(dx, dy);
-            if (dd >= r) continue;
-            if (dd < 1e-4) { const l = o.x - ax, rr = bx - o.x, tt = o.y - ay, bt = by - o.y, m = Math.min(l, rr, tt, bt);
-              if (m === l) o.x = ax - r; else if (m === rr) o.x = bx + r; else if (m === tt) o.y = ay - r; else o.y = by + r; continue; }
-            o.x += dx / dd * (r - dd); o.y += dy / dd * (r - dd);
-          }
-          continue;
-        }
-        if (b && wallish0(b)) { /* a wall cell with no slab of its own: solid */ }
-        else if (pFloor[k] && !M.floor[k] && i >= 0 && j >= 0 && i < W && j < Hh) continue;       // floor under a wall's cell
+        } else if (pFloor[k] && !M.floor[k] && i >= 0 && j >= 0 && i < W && j < Hh) continue;
         if (!solid(i, j)) continue;
+        if (ledge[k] && ledge[k] <= (o.z || 0) + 3) continue;                         // (he is above it: on it, or over it)
         const ax = i * CELL, ay = j * CELL, nx = Math.max(ax, Math.min(o.x, ax + CELL)), ny = Math.max(ay, Math.min(o.y, ay + CELL));
         const dx = o.x - nx, dy = o.y - ny, d = Math.hypot(dx, dy);
         if (d >= r) continue;
@@ -900,6 +1304,15 @@ export function makeWorld(M, extra = {}) {
     }
   }
   const solidAt = (x, y) => solid(Math.floor(x / CELL), Math.floor(y / CELL));
+  // ---- ledges: the low solid things one can climb onto (crates, barrels, chests, benches, tables, tombs, hedges, a
+  // fountain's rim…), their tops in the priest's height units; walls, cupboards, trees and lamps are too tall.
+  const ledge = new Float32Array(W * Hh);
+  for (let k = 0; k < W * Hh; k++) if (M.block[k] === B.PROP) { const T = PROPS[M.props[M.pi[k]].type];
+    if (T.statue || T.hang || T.solid === false || T.flora) continue;
+    const h = propHeight(M.props[M.pi[k]].type); if (h <= 46) ledge[k] = h / V; }
+  const ledgeAt = (x, y) => { const i = Math.floor(x / CELL), j = Math.floor(y / CELL); return i >= 0 && j >= 0 && i < W && j < Hh ? ledge[j * W + i] : 0; };
+  // what he would stand on at (x, y), a body of radius r: the highest ledge under any part of him
+  const supportAt = (x, y, r = 4) => Math.max(ledgeAt(x, y), ledgeAt(x - r, y), ledgeAt(x + r, y), ledgeAt(x, y - r), ledgeAt(x, y + r));
   function freeNear(x, y, min, max) {
     for (let k = 0; k < 80; k++) {
       const a = Math.random() * Math.PI * 2, r = min + Math.random() * (max - min), px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
@@ -948,7 +1361,7 @@ export function makeWorld(M, extra = {}) {
   const doorOpen = n => doors[n]?.open;
   // The great window, smashed (by the demon coming in).
   let broken = false;
-  function breakWindow() { broken = true; for (const key of [...sprites.keys()]) if (key.startsWith('w4.') || key.startsWith('c4.')) sprites.delete(key); }
+  function breakWindow() { broken = true; memoGen++; for (const key of [...sprites.keys()]) if (key.startsWith('w4.') || key.startsWith('c4.')) sprites.delete(key); }
   // The whole cathedral as a lit model, fitted into maxW × maxH: { canvas, map(x, y) → [px, py] on it }.
   function diorama(maxW, maxH) {
     let X0 = 1e9, X1 = -1e9, Y0 = 1e9, Y1 = -1e9;
@@ -964,6 +1377,6 @@ export function makeWorld(M, extra = {}) {
     g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'destination-in'; g.drawImage(mask, 0, 0); g.globalCompositeOperation = 'source-over';
     return { canvas: c, map: (x, y) => { const [sx, sy] = toScr(x, y); return [(sx + ox) * sc, (sy - heightAt(x, y) + oy) * sc]; } };
   }
-  return { focus, shownAt, warmFloor, breakWindow, diorama, drawFloor, blood, clearBlood, blocks, lightUp, collide, solidAt, freeNear, prefetch, floorAt, doorNear, toggleDoor, doorOpen, tick, heightAt, rooms: () => rooms,
+  return { ledgeAt, supportAt, outside: () => cur >= 0 && openRoom[cur] === 1, hidden: () => hiddenNow, focus, shownAt, warmFloor, breakWindow, diorama, drawFloor, blood, clearBlood, blocks, lightUp, collide, solidAt, freeNear, prefetch, floorAt, doorNear, toggleDoor, doorOpen, tick, heightAt, rooms: () => rooms,
     _debug: { sprite: (i, j, cut) => sprite(M.block[j * W + i], i, j, j * W + i, cut), feat: (i, j) => wFeat[j * W + i], face: (i, j) => wFace[j * W + i] } };
 }

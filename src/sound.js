@@ -1,8 +1,8 @@
 // Every sound in the game, made on the spot with Web Audio: no files. Blows, flesh, bone, the cries of the ten,
 // the priest's breath, groans and steps, fire. Only what the characters do: no music, no ambience.
 // The browser only lets sound start after a key or a touch, so the context is born on the first one.
-import { synth, utter } from './voice.js?v=78777f9';
-import { BEINGS } from './beings.js?v=78777f9';
+import { synth, utter } from './voice.js?v=f76c404';
+import { BEINGS } from './beings.js?v=f76c404';
 let ac = null, bus, dry, noiseBuf, brownBuf, enabled = true, testing = false, live = 0;
 try { enabled = localStorage.getItem('sacrimorte_sonido') !== '0'; } catch {}
 const last = {}, waiting = new Set();

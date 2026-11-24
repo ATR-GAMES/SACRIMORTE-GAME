@@ -25,7 +25,8 @@ const ICON = {
   candelabro: ['#...#...#', '#...#...#', '#########', '....#....', '....#....', '....#....', '....#....', '...###...', '..#####..'],
   horca: ['#.#.#....', '#.#.#....', '#####....', '..#......', '..#......', '..#......', '..#......', '..#......', '..#......'],
 };
-const C = { fill: 'rgba(22,8,10,.62)', down: 'rgba(150,24,18,.85)', rim: '#6e1610', rimDark: '#2a0608', hi: 'rgba(255,230,210,.14)', ink: '#eadcc4', inkDim: '#7a6c60', shade: '#0a0204' };
+// Dark glass in a thin bronze ring, as the church's lamps and reliquaries: quiet until pressed, then a red glow.
+const C = { fill: 'rgba(12,8,14,.42)', down: 'rgba(120,26,20,.62)', rim: '#8c6a3e', rimHi: '#d8b070', rimDark: 'rgba(6,3,6,.75)', hi: 'rgba(255,236,200,.16)', ink: '#e8dcc4', inkDim: 'rgba(232,220,196,.35)', shade: 'rgba(6,2,4,.8)', glow: 'rgba(200,60,40,.35)' };
 
 export function initTouch({ keys, hit, state, weapons, view }) {
   document.body.classList.add('touch');
@@ -41,24 +42,23 @@ export function initTouch({ keys, hit, state, weapons, view }) {
   // ---------------------------------------------------------------- layout, in canvas pixels
   let B = [];
   const layout = () => {
-    const w = view.w, h = view.h, s = Math.min(1.25, Math.max(.85, h / 200));   // a little larger on bigger screens
+    const w = view.w, h = view.h, s = Math.min(1.15, Math.max(.8, h / 330));   // (a phone's whole screen at one game pixel a CSS pixel)
     const R = v => Math.round(v * s);
+    // the attack in the corner, the other actions in an arc round it (the thumb rolls from one to the next)
+    const ax = w - R(46), ay = h - R(44), arc = (deg, d) => [Math.round(ax + Math.cos(deg * Math.PI / 180) * R(d)), Math.round(ay + Math.sin(deg * Math.PI / 180) * R(d))];
+    const at = (id, code, deg, d, r, more = {}) => { const [x, y] = arc(deg, d); return { id, code, x, y, r: R(r), ...more }; };
     B = [
-      { id: 'atk', code: 'Mouse0', x: w - R(36), y: h - R(36), r: R(24), big: 1 },
-      { id: 'roll', code: 'KeyQ', x: w - R(86), y: h - R(22), r: R(15) },
-      { id: 'jump', code: 'Space', x: w - R(26), y: h - R(88), r: R(15) },
-      { id: 'cross', code: 'KeyF', hold: 1, x: w - R(76), y: h - R(70), r: R(14) },
-      { id: 'pray', code: 'KeyR', x: w - R(118), y: h - R(56), r: R(12) },
-      { id: 'crouch', code: 'KeyC', x: w - R(128), y: h - R(20), r: R(11) },
-      { id: 'pause', code: 'Escape', x: w - R(16), y: R(16), r: R(11), sq: 1 },
-      { id: 'wpn', x: w - R(44), y: R(16), r: R(11), sq: 1, wide: R(14) },
-      { id: 'map', code: 'KeyM', x: w - R(74), y: R(16), r: R(11), sq: 1 },
-      { id: 'use', code: 'KeyE', x: w - R(70), y: h - R(116), r: R(13), only: 'door' },
+      { id: 'atk', code: 'Mouse0', x: ax, y: ay, r: R(22), big: 1 },
+      at('roll', 'KeyQ', 180, 44, 12), at('cross', 'KeyF', 222, 44, 12, { hold: 1 }), at('jump', 'Space', 266, 44, 12),
+      at('crouch', 'KeyC', 196, 76, 10), at('pray', 'KeyR', 236, 76, 10), at('use', 'KeyE', 272, 80, 11, { only: 'door' }),
+      { id: 'pause', code: 'Escape', x: w - R(14), y: R(13), r: R(8), sq: 1 },
+      { id: 'wpn', x: w - R(40), y: R(13), r: R(8), sq: 1, wide: R(11) },
+      { id: 'map', code: 'KeyM', x: w - R(66), y: R(13), r: R(8), sq: 1 },
     ];
     const gy = h - R(20), gs = R(26);
     G = [['left', 'ArrowLeft'], ['right', 'ArrowRight'], ['up', 'ArrowUp'], ['down', 'ArrowDown'], ['exit', 'Tab']].map(([id, code], i) =>
       ({ id, code, x: Math.round(w / 2 + (i - 2) * gs), y: gy, r: R(11), sq: 1 }));
-    stickHome = { x: R(48), y: h - R(46) }; stickR = R(24);
+    stickHome = { x: R(52), y: h - R(50) }; stickR = R(26);
   };
   let G = [], stickHome = { x: 40, y: 150 }, stickR = 24;
 
@@ -121,11 +121,22 @@ export function initTouch({ keys, hit, state, weapons, view }) {
     const x0 = Math.round(cx - 4.5 * sc), y0 = Math.round(cy - 4.5 * sc);
     for (const [c, o] of [[C.shade, 1], [col, 0]]) { g.fillStyle = c; I.forEach((row, j) => { for (let i = 0; i < row.length; i++) if (row[i] === '#') g.fillRect(x0 + i * sc + o, y0 + j * sc + o, sc, sc); }); }
   };
+  // a ring: a dark line outside, the bronze inside it, lit on its upper left
+  const ring = (g, cx, cy, r, col, hi) => {
+    for (let a = 0; a < 360; a += 360 / (r * 7)) { const t = a * Math.PI / 180, x = Math.round(cx + Math.cos(t) * r), y = Math.round(cy + Math.sin(t) * r);
+      g.fillStyle = C.rimDark; g.fillRect(x + Math.sign(Math.cos(t)) * (Math.abs(Math.cos(t)) > .5 ? 1 : 0), y + Math.sign(Math.sin(t)) * (Math.abs(Math.sin(t)) > .5 ? 1 : 0), 1, 1);
+      g.fillStyle = (a > 170 && a < 280) ? hi : col; g.fillRect(x, y, 1, 1); }
+  };
   const button = (g, b, name, dim) => {
-    const fill = b.down ? C.down : C.fill, rim = b.down ? '#c8301e' : C.rim;
-    if (b.sq) box(g, b.x, b.y, b.wide || b.r, b.r, fill, rim); else disc(g, b.x, b.y, b.r, fill, rim);
-    if (!b.down && !b.sq) { g.fillStyle = C.hi; g.fillRect(b.x - Math.round(b.r * .55), b.y - Math.round(b.r * .7), Math.round(b.r * .5), 1); }
-    icon(g, name, b.x, b.y, b.big ? 3 : 2, dim ? C.inkDim : C.ink);
+    const r = b.r;
+    if (b.sq) { const hw = b.wide || r; box(g, b.x, b.y, hw, r, b.down ? C.down : C.fill, b.down ? C.rimHi : C.rim); g.fillStyle = C.hi; g.fillRect(b.x - hw + 2, b.y - r + 1, hw * 2 - 3, 1); }
+    else {
+      if (b.down) { g.fillStyle = C.glow; disc(g, b.x, b.y, r + 2, C.glow, C.glow); }
+      disc(g, b.x, b.y, r - 1, b.down ? C.down : C.fill, b.down ? C.down : C.fill);
+      ring(g, b.x, b.y, r, b.down ? C.rimHi : C.rim, b.down ? '#fff0c8' : C.rimHi);
+      if (b.big) ring(g, b.x, b.y, r - 3, 'rgba(140,106,62,.45)', 'rgba(216,176,112,.45)');   // the attack's inner ring
+    }
+    icon(g, name, b.x, b.y, b.big ? 2 : b.sq ? 1 : (r >= 11 ? 2 : 1), dim ? C.inkDim : C.ink);
   };
   let lastW = 0, lastH = 0;
   function draw(g) {
@@ -136,10 +147,10 @@ export function initTouch({ keys, hit, state, weapons, view }) {
     if (st.mode === 'dead') return;
     // The stick: where the thumb landed, or a faint hint of where it goes.
     if (stick) {
-      disc(g, Math.round(stick.ox), Math.round(stick.oy), stickR, 'rgba(22,8,10,.35)', C.rim);
-      disc(g, Math.round(stick.x), Math.round(stick.y), Math.round(stickR * .42), 'rgba(150,24,18,.8)', C.rimDark);
+      disc(g, Math.round(stick.ox), Math.round(stick.oy), stickR - 1, 'rgba(12,8,14,.28)', 'rgba(12,8,14,.28)'); ring(g, Math.round(stick.ox), Math.round(stick.oy), stickR, C.rim, C.rimHi);
+      const kr = Math.round(stickR * .4); disc(g, Math.round(stick.x), Math.round(stick.y), kr - 1, 'rgba(120,26,20,.6)', 'rgba(120,26,20,.6)'); ring(g, Math.round(stick.x), Math.round(stick.y), kr, C.rimHi, '#fff0c8');
     } else {
-      g.globalAlpha = .45; disc(g, stickHome.x, stickHome.y, stickR, 'rgba(22,8,10,.25)', C.rim); disc(g, stickHome.x, stickHome.y, Math.round(stickR * .42), 'rgba(110,22,16,.5)', C.rimDark); g.globalAlpha = 1;
+      g.globalAlpha = .5; ring(g, stickHome.x, stickHome.y, stickR, C.rim, C.rimHi); ring(g, stickHome.x, stickHome.y, Math.round(stickR * .4), C.rim, C.rimHi); g.globalAlpha = 1;
     }
     for (const b of B) if (!b.only || st[b.only]) button(g, b, b.id === 'wpn' ? st.wid : b.id, (b.id === 'atk' && !st.wid) || ((b.id === 'roll' || b.id === 'cross') && st.st < 10));
   }

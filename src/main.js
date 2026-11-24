@@ -1,18 +1,18 @@
 // The priest in the Cathedral of Our Lady of the Souls (src/cathedral.js), against the demon's ten, with health, stamina, five weapons, the
 // roll, prayer and the crucifix, and a great deal of blood. Plus a gallery of every animation in all eight facings.
-import { ANIMS, bake, animsFor, animInfo, OX, OY, CINE, bakeCine } from './priest.js?v=78777f9';
-import { WEAPONS, WEAPON_IDS } from './weapons.js?v=78777f9';
-import { toScreen } from './raster.js?v=78777f9';
-import { ENEMIES, ENEMY_IDS, ENEMY_ANIMS, bakeEnemy, bakeFaithful, bakeDemon, DEMON } from './enemies.js?v=78777f9';
-import { createIntro } from './intro.js?v=78777f9';
-import { Sheet, loadPacked } from './atlas.js?v=78777f9';
-import { initTouch } from './touch.js?v=78777f9';
-import { MOBILE, PERF } from './device.js?v=78777f9';
-import * as SFX from './sfx.js?v=78777f9';
-import { K as GK, V as GV } from './view.js?v=78777f9';
-import { build as buildCathedral } from './cathedral.js?v=78777f9';
-import { makeWorld } from './world.js?v=78777f9';
-import { createMap } from './map.js?v=78777f9';
+import { ANIMS, bake, animsFor, animInfo, OX, OY, CINE, bakeCine } from './priest.js?v=f76c404';
+import { WEAPONS, WEAPON_IDS } from './weapons.js?v=f76c404';
+import { toScreen } from './raster.js?v=f76c404';
+import { ENEMIES, ENEMY_IDS, ENEMY_ANIMS, bakeEnemy, bakeFaithful, bakeDemon, DEMON } from './enemies.js?v=f76c404';
+import { createIntro } from './intro.js?v=f76c404';
+import { Sheet, loadPacked } from './atlas.js?v=f76c404';
+import { initTouch } from './touch.js?v=f76c404';
+import { MOBILE, PERF } from './device.js?v=f76c404';
+import * as SFX from './sfx.js?v=f76c404';
+import { K as GK, V as GV } from './view.js?v=f76c404';
+import { build as buildCathedral } from './cathedral.js?v=f76c404';
+import { makeWorld } from './world.js?v=f76c404';
+import { createMap } from './map.js?v=f76c404';
 
 // The map, and what draws it and keeps everyone out of its walls.
 // Statues are the game's own figures carved in pale stone: a saint holding up the cross, a hooded virgin, a kneeling monk.
@@ -153,7 +153,7 @@ addEventListener('contextmenu', e => e.preventDefault());
 const down = (...c) => c.some(k => keys.has(k)), pressed = c => hit.has(c);
 
 // ---------------------------------------------------------------- the priest
-const WALK = 52, RUN = 118, CROUCH = 24, ROLL = 200, JUMPV = 235, G = 1150;
+const WALK = 52, RUN = 118, CROUCH = 24, ROLL = 200, JUMPV = 300, G = 1150, SLIDE = 210, SLIDE_COST = 14, GRAB = 20;   // (GRAB: how far above his feet he can still catch a ledge)
 const pl = { x: MAP.start[0], y: MAP.start[1], z: 0, vz: 0, k: MAP.startK, mode: 'ground', anim: 'idle', t: 0, timer: 0, vx: 0, vy: 0, kx: 0, ky: 0, crouch: false, wid: '', pending: 'cruz',
   gore: 0, hp: HP, st: ST, stT: 0, flash: 0, stats: { kills: 0, wounds: 0, t0: performance.now() }, deathT: 0 };
 const dust = [];
@@ -164,7 +164,10 @@ function figCanvas(key, make) {
   const s = make(); c = document.createElement('canvas'); c.width = s.w; c.height = s.h;
   c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(s.d.buffer.slice(0)), s.w, s.h), 0, 0); figCache.set(key, c); return c;
 }
-const NO_INTRO = new URLSearchParams(location.search).has('sinintro') || new URLSearchParams(location.search).has('clip');
+// Live reload (tools/serve.mjs): the page reloads itself when a file changes, and comes back where the priest stood.
+const LIVE = (() => { try { const v = sessionStorage.getItem('sacri-live'); sessionStorage.removeItem('sacri-live'); return v ? JSON.parse(v) : null; } catch { return null; } })();
+if (LIVE) { pl.x = LIVE.x; pl.y = LIVE.y; }
+const NO_INTRO = !!LIVE || new URLSearchParams(location.search).has('sinintro') || new URLSearchParams(location.search).has('clip');
 if (MOBILE) MAP.congregation = MAP.congregation.filter((p, n) => n % 2 === 0 || p.y < 40);   // a lighter crowd on a phone
 const INTRO = createIntro({ MAP, WORLD, SFX, pl, FOX: OX, FOY: OY, mobile: MOBILE, demonAnims: DEMON.anims, cine: CINE,
   cineSprite: (n, f, k) => figCanvas(['c', n, f, k].join(), () => bakeCine(n, f, k)),
@@ -271,7 +274,7 @@ function update(dt) {
 
   switch (pl.mode) {
     case 'ground': {
-      if (pressed('KeyC')) pl.crouch = !pl.crouch;
+      if (pressed('KeyC') && !(mv && shift)) pl.crouch = !pl.crouch;
       let speed = 0;
       if (mv) { pl.k = mv.k; speed = pl.crouch ? CROUCH : shift ? RUN : WALK; pl.x += mv.x * speed * dt; pl.y += mv.y * speed * dt; }
       const a = mv ? (pl.crouch ? 'cwalk' : shift ? 'run' : 'walk') : pl.cleaning ? 'clean' : (pl.crouch ? 'crouch' : 'idle');
@@ -282,6 +285,7 @@ function update(dt) {
       pl.vx = mv ? mv.x * speed : 0; pl.vy = mv ? mv.y * speed : 0;
       if (blowKey >= 0 && pl.wid) { if (mv) pl.k = mv.k; startBlow(blowKey || 1); }
       else if (pressed('Space')) { pl.crouch = false; pl.mode = 'prep'; pl.timer = .055; pl.fps = 0; setAnim('jump'); SFX.jump(); }
+      else if (pressed('KeyC') && mv && shift && pl.st >= 10) { pl.crouch = false; spend(SLIDE_COST); pl.mode = 'slide'; pl.t = 0; pl.fps = 0; setAnim('roll'); puff(4, 10); SFX.roll(); }   // running, a slide
       else if (pressed('KeyQ') && canRoll()) { if (mv) pl.k = mv.k; spend(ROLL_COST); pl.mode = 'roll'; pl.fps = 0; setAnim('roll'); puff(4, 10); SFX.roll(); }
       else if (pressed('KeyE')) {
         const dr = WORLD.toggleDoor(pl.x, pl.y, [pl, ...foes.filter(alive)]); if (dr) SFX.door(dr.open, panOf(dr));
@@ -316,7 +320,11 @@ function update(dt) {
       if (mv) { pl.vx += (mv.x * WALK - pl.vx) * Math.min(1, dt * 2); pl.vy += (mv.y * WALK - pl.vy) * Math.min(1, dt * 2); pl.k = mv.k; }
       pl.x += pl.vx * dt; pl.y += pl.vy * dt; pl.z += pl.vz * dt; pl.vz -= G * dt;
       pl.frame = pl.airT < .07 ? 1 : pl.vz > JUMPV * .3 ? 2 : pl.vz > -JUMPV * .3 ? 3 : 4;
-      if (pl.z <= 0) { pl.z = 0; pl.vz = 0; pl.mode = 'land'; pl.timer = .085; puff(6, 12); SFX.land(); }
+      // a ledge just ahead, a little above his feet: he catches its edge and pulls himself up onto it
+      { const d = dirOf(pl.k), ax = pl.x + d[0] * 11, ay = pl.y + d[1] * 11, top = WORLD.ledgeAt(ax, ay);
+        if (top > pl.z && top - pl.z <= GRAB && pl.vz < JUMPV * .6) { pl.x = ax - d[0] * 3; pl.y = ay - d[1] * 3; pl.z = top; pl.vz = 0; pl.vx *= .3; pl.vy *= .3; pl.mode = 'land'; pl.timer = .16; puff(3, 8); SFX.land(); break; } }
+      const under = WORLD.supportAt(pl.x, pl.y);
+      if (pl.z <= under && pl.vz <= 0) { pl.z = under; pl.vz = 0; pl.mode = 'land'; pl.timer = .085; puff(6, 12); SFX.land(); }
       break;
     }
     case 'land':
@@ -327,6 +335,14 @@ function update(dt) {
       const d = dirOf(pl.k), sp = ROLL * (1 - Math.min(1, pl.t * 1.6) * .45);
       pl.x += d[0] * sp * dt; pl.y += d[1] * sp * dt;
       if (done()) { pl.mode = 'ground'; puff(3, 8); }
+      break;
+    }
+    case 'slide': {                                                                    // a running slide: fast, slowing; over low things in the way
+      const d = dirOf(pl.k), sp = SLIDE * Math.max(0, 1 - pl.t * 1.5);
+      pl.x += d[0] * sp * dt; pl.y += d[1] * sp * dt; pl.vx = d[0] * sp; pl.vy = d[1] * sp;
+      { const top = WORLD.ledgeAt(pl.x + d[0] * 9, pl.y + d[1] * 9); if (top > pl.z && top - pl.z <= GRAB * .8) pl.z = top; }
+      if (Math.random() < dt * 20) puff(1, 5);
+      if (pl.t > .55 || sp < 40) { pl.mode = 'ground'; pl.frame = null; }
       break;
     }
     case 'act': if (done()) pl.mode = 'ground'; break;
@@ -346,6 +362,9 @@ function update(dt) {
     case 'dead': break;
   }
   if (pl.mode === 'ground' || pl.mode === 'act' || pl.mode === 'dead' || pl.mode === 'atk' || pl.mode === 'roll') pl.frame = null;
+  // standing on something and walking off its edge: he falls
+  if (pl.z > 0 && pl.mode !== 'air' && pl.mode !== 'prep' && pl.mode !== 'dead') { const under = WORLD.supportAt(pl.x, pl.y);
+    if (under < pl.z - 1) { pl.mode = 'air'; pl.vz = 0; pl.airT = .2; setAnim('jump'); pl.fps = 0; } else pl.z = under; }
 
   // Knocked back, stamina, flashes.
   pl.x += pl.kx * dt; pl.y += pl.ky * dt; pl.kx *= Math.exp(-dt * 7); pl.ky *= Math.exp(-dt * 7);
@@ -620,12 +639,13 @@ function updateFoes(dt) {
 }
 
 // ---------------------------------------------------------------- drawing
-const view = { w: 400, h: 225, s: 3 }, cam = { x: MAP.start[0], y: MAP.start[1] }, look = { x: 0, y: 0 }, place = { name: '', t: 99 };
+const view = { w: 400, h: 225, s: 3 }, cam = { x: LIVE ? LIVE.x : MAP.start[0], y: LIVE ? LIVE.y : MAP.start[1] }, look = { x: 0, y: 0 }, place = { name: '', t: 99 };
 const panOf = o => Math.max(-1, Math.min(1, ((o.x - o.y) - (cam.x - cam.y)) * Math.SQRT1_2 / (view.w / 2) * .85));
 let gallery = false, gIdx = 0, gT = 0, gWid = '', gWho = 0;
 // The usual scale: close in, the way Diablo's camera sits over its hero. The cinematic's wide shots pull back to the hall.
 let wideShot = false;
-const baseScale = () => Math.max(2, Math.floor(Math.min(innerWidth / 680, innerHeight / 380)));
+// (on a phone one CSS pixel a game pixel: a phone's screen is small, so the world is drawn at its finest, not doubled)
+const baseScale = () => MOBILE ? 1 : Math.max(2, Math.floor(Math.min(innerWidth / 680, innerHeight / 380)));
 function resize() {
   const W = innerWidth, H = innerHeight;
   // The cinematic's wide shots pull back to half the scale: a whole number, so every pixel stays a clean square.
@@ -675,8 +695,9 @@ function drawPlay() {
   }
   const [gx, gy0] = toScreen(pl.x, pl.y, 0), gy = gy0 - WORLD.heightAt(pl.x, pl.y), hz = pl.z;   // lifted when he stands on the dais
   const lying = pl.anim === 'death' && frameOf() >= 7, f = pl.frame ?? frameOf();
-  const list = [{ d: pl.x + pl.y, draw: () => {
-    shadow(ox + gx, oy + gy, Math.max(6, (lying ? 20 : 12) - hz * .12), Math.max(3, (5 - hz * .05) * GK * 2), Math.max(.08, .22 - hz * .004));
+  const onTop = pl.z > 0 && WORLD.supportAt(pl.x, pl.y) > 0, sup = Math.min(hz, WORLD.supportAt(pl.x, pl.y));
+  const list = [{ d: pl.x + pl.y + (onTop ? 45 : 0), draw: () => {
+    shadow(ox + gx, oy + gy - sup * GV, Math.max(6, (lying ? 20 : 12) - (hz - sup) * .12), Math.max(3, (5 - hz * .05) * GK * 2), Math.max(.08, .22 - hz * .004));
     const cp = INTRO.priestPose();
     if (cp) { const c = figCanvas(['c', cp.name, cp.f, cp.k].join(), () => bakeCine(cp.name, cp.f, cp.k)); ctx.drawImage(c, Math.round(ox + gx - OX), Math.round(oy + gy - OY)); }
     else drawS(SETS[pl.wid], pl.anim, pl.k, f, ox + gx, oy + gy - hz * GV);
@@ -695,6 +716,8 @@ function drawPlay() {
   } });
   list.push(...WORLD.blocks(ox, oy, VW, VH, INTRO.active ? -1e5 : ox + gx, oy + gy - 24, pl.x + pl.y, pl.x, pl.y), ...INTRO.drawables(ox, oy));
   list.sort((p, q) => p.d - q.d).forEach(o => o.draw(ctx));
+  // Behind the church, out in the open: his shape shows through it, so he is never lost.
+  if (WORLD.hidden() && !INTRO.active && !INTRO.priestPose()) { ctx.globalAlpha = .55; drawS(SETS[pl.wid], pl.anim, pl.k, f, ox + gx, oy + gy - hz * GV); ctx.globalAlpha = 1; }
   for (const d of drops) {
     const up = WORLD.heightAt(d.x, d.y), [sx, sy] = toScreen(d.x, d.y, d.z).map((v, n) => n ? v - up : v), [tx, ty] = toScreen(d.x - d.vx * .02, d.y - d.vy * .02, d.z - d.vz * .02).map((v, n) => n ? v - up : v);
     ctx.fillStyle = BLOOD[2]; ctx.fillRect(Math.round(ox + tx), Math.round(oy + ty), 1, 1);
@@ -715,8 +738,9 @@ function drawPlay() {
   WORLD.lightUp(ctx, ox, oy, VW, VH, dyn, performance.now() / 1000, { noFog: Z < 1 });
   ctx.restore();
   // The edges of the view sink into black.
-  const vg = ctx.createRadialGradient(view.w / 2, view.h / 2, view.h * .42, view.w / 2, view.h / 2, view.w * .62);
-  vg.addColorStop(0, 'rgba(4,2,6,0)'); vg.addColorStop(1, 'rgba(4,2,6,.62)'); ctx.fillStyle = vg; ctx.fillRect(0, 0, view.w, view.h);
+  // (out in the open, with the whole grounds in view, the edges of the screen darken only a little)
+  const outV = WORLD.outside() && !INTRO.active, vg = ctx.createRadialGradient(view.w / 2, view.h / 2, view.h * (outV ? .6 : .42), view.w / 2, view.h / 2, view.w * (outV ? .75 : .62));
+  vg.addColorStop(0, 'rgba(4,2,6,0)'); vg.addColorStop(1, outV ? 'rgba(4,2,6,.22)' : 'rgba(4,2,6,.62)'); ctx.fillStyle = vg; ctx.fillRect(0, 0, view.w, view.h);
   { const k = baseScale() / view.s; ctx.save(); ctx.scale(k, k); INTRO.overlay(ctx, view.w / k, view.h / k); ctx.restore(); }
   // The name of the place he has walked into: comes up in the old red letters, stays a moment, goes.
   if (place.t < 4.2 && place.name) {

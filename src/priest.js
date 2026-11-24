@@ -3,8 +3,8 @@
 // one bandaged, bloodied hand. He is built from ellipsoids on a small skeleton (IK legs, FK arms), posed per frame and
 // handed to the raster to become pixels. Every one of the eight facings is drawn for real (none mirrored), so the
 // bandaged hand and the rosary always stay on his left.
-import { renderSprite, hash, M } from './raster.js?v=78777f9';
-import { WEAPONS } from './weapons.js?v=78777f9';
+import { renderSprite, hash, M } from './raster.js?v=f76c404';
+import { WEAPONS } from './weapons.js?v=f76c404';
 
 const { sin, cos, sqrt, PI, abs, max, min, atan2, hypot, ceil } = Math;
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];

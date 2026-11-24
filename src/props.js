@@ -10,7 +10,7 @@
 // A thing several cells wide is drawn cell by cell (each cell a sprite sorted with the characters).
 // Rotation: 0 as defined (the front looks south, +y), 1 front west, 2 front north, 3 front east.
 
-import { GY, DH, ZS, thinUp } from './view.js?v=78777f9';
+import { GY, DH, ZS, thinUp } from './view.js?v=f76c404';
 
 const clamp8 = v => v < 0 ? 0 : v > 255 ? 255 : v | 0;
 const hash = (a, b, c = 0) => { let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(c | 0, 1440662683); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
@@ -36,7 +36,7 @@ const R = {
   oak: ramp([126, 80, 50], 7), dark: ramp([84, 52, 38], 7), red: ramp([150, 28, 40], 6), stone: ramp([128, 114, 136], 7), pale: ramp([170, 158, 174], 7),
   marble: ramp([208, 200, 200], 6, [255, 250, 240]), linen: ramp([224, 216, 200], 5, [255, 250, 236]), gold: ramp([212, 160, 60], 7, [255, 240, 170]),
   iron: ramp([70, 64, 78], 6), wax: ramp([232, 222, 200], 4, [255, 248, 230]), paper: ramp([226, 214, 186], 4), leather: ramp([116, 64, 40], 6),
-  purple: ramp([104, 46, 120], 6), green: ramp([58, 92, 50], 6, [200, 230, 150]), bark: ramp([88, 62, 44], 5), water: ramp([50, 80, 120], 5, [170, 210, 255]),
+  purple: ramp([104, 46, 120], 6), green: ramp([58, 92, 50], 6, [200, 230, 150]), autumn: ramp([150, 66, 38], 6, [250, 178, 92]), darkgreen: ramp([34, 66, 44], 6, [130, 186, 124]), palegreen: ramp([96, 128, 62], 6, [214, 234, 150]), bark: ramp([88, 62, 44], 5), water: ramp([50, 80, 120], 5, [170, 210, 255]),
   straw: ramp([182, 150, 88], 5), sack: ramp([158, 132, 92], 5), soot: ramp([40, 34, 38], 4), copper: ramp([168, 96, 56], 6), bronze: ramp([140, 106, 64], 6),
   blue: ramp([56, 78, 140], 6), pipe: ramp([176, 176, 190], 7, [255, 255, 255]),
 };
@@ -59,6 +59,8 @@ export const MAT = {
   flame: { emit: (f, U, V) => V < 1.5 ? [255, 250, 214] : [255, 198, 92] }, fire: { emit: (f, U, V, s) => hash(U | 0, V | 0, s) < .5 ? [255, 150, 40] : [255, 214, 96] },
   lantern: { emit: (f, U, V) => (U | 0) % 6 === 0 ? [120, 90, 50] : [255, 214, 140] },
   paper: { r: R.paper, tex: (f, U, V) => (V | 0) % 3 === 0 && f === 'T' ? .86 : 1 }, leather: { r: R.leather }, cushion: { r: R.red, tex: () => 1 },
+  autumnleaf: { r: R.autumn, tex: (f, U, V, s) => { const n = hash(U >> 1, V >> 1, s * 5); return n < .25 ? .72 : n > .8 ? 1.16 : 1; } }, darkleaf: { r: R.darkgreen, tex: (f, U, V, s) => { const n = hash(U >> 1, V >> 1, s * 5); return n < .25 ? .72 : n > .8 ? 1.16 : 1; } }, paleleaf: { r: R.palegreen, tex: (f, U, V, s) => { const n = hash(U >> 1, V >> 1, s * 5); return n < .25 ? .72 : n > .8 ? 1.16 : 1; } },
+  hedgeleaf: { r: R.green, tex: (f, U, V, s) => { const n = hash(U >> 1, (V + (f === 'T' ? 0 : U)) >> 1, 7); return { c: [[26, 38, 30], [36, 52, 38], [48, 66, 46], [62, 82, 54]][Math.min(3, Math.floor((f === 'T' ? 2.2 : 1.2) + (n - .4) * 2.2))] }; } },   // (the dark greens of the trees)
   pipe: { r: R.pipe, metal: 1 }, leaf: { r: R.green, tex: (f, U, V, s) => { const n = hash(U >> 1, V >> 1, s * 5); return n < .25 ? .72 : n > .8 ? 1.16 : 1; } },
   bark: { r: R.bark }, water: { r: R.water, tex: (f, U, V) => f === 'T' ? 1 + .1 * Math.sin(U * .7 + V * .5) : 1 }, straw: { r: R.straw }, sack: { r: R.sack, tex: (f, U, V) => .95 + .08 * Math.sin(U * 1.3) },
   blanket: { r: R.red, tex: (f, U, V) => (Math.floor(U / 4) + Math.floor(V / 4)) & 1 ? 1 : .82 }, soot: { r: R.soot }, copper: { r: R.copper, metal: .8 }, bronze: { r: R.bronze, metal: .7 },
@@ -90,6 +92,19 @@ MAT.bannerred = bannerCloth(R.red); MAT.bannerpurple = bannerCloth(R.purple);
 // fp: footprint [w, h] in cells; shapes; solid: blocks the way (default true); lights: [x, y, z(px), colour, radius];
 // hang: up in the air (never blocks); statue: a statue stands on it at this height.
 const C = (cx, cy, r, z0, z1, m, r1) => ['C', cx, cy, r, z0, z1, m, r1 ?? r];
+// A branch from one point to another, as a run of short upright pieces stepping along the line (cones only stand upright).
+const branch = (x0, y0, z0, x1, y1, z1, r0, r1, n = 9) => Array.from({ length: n }, (_, i) => { const a = i / n, b = (i + 1) / n;
+  return C(x0 + (x1 - x0) * (a + b) / 2, y0 + (y1 - y0) * (a + b) / 2, r0 + (r1 - r0) * a, z0 + (z1 - z0) * a, z0 + (z1 - z0) * b + 1.5, 'bark', r0 + (r1 - r0) * b); });
+// A ball of leaves: a sphere of reach R (cells) round (x, y, z), as thin slices so it reads round, not cut flat; sq
+// squashes it (an umbrella's flat crown).
+const ball = (x, y, z, R, sq = 1, m = 'leaf', n = 11) => { const H = R * 46 * sq, out = [];   // (46 a cell: as tall on screen as it is wide)
+  for (let i = 0; i < n; i++) { const a = -1 + 2 * i / n, b = -1 + 2 * (i + 1) / n, ra = R * Math.sqrt(Math.max(0, 1 - a * a)), rb = R * Math.sqrt(Math.max(0, 1 - b * b));
+    out.push(C(x, y, Math.max(.04, ra), z + a * H / 2, z + b * H / 2 + .6, m, Math.max(.02, rb))); }
+  return out; };
+// Shapes made bigger: k across, kz up.
+const grow = (shapes, k, kz) => shapes.map(t => t[0] === 'C' ? ['C', t[1] * k, t[2] * k, t[3] * k, t[4] * kz, t[5] * kz, t[6], t[7] * k] : [t[0] * k, t[1] * k, t[2] * kz, t[3] * k, t[4] * k, t[5] * kz, t[6]]);
+// A clump of leaves at the end of a branch: z its middle, r its reach.
+const clump = (x, y, z, r) => [C(x, y, r * .55, z - r * 16, z - r * 6, 'leaf', r), C(x, y, r, z - r * 6, z + r * 10, 'leaf', r * .85), C(x, y, r * .85, z + r * 10, z + r * 18, 'leaf', r * .35), C(x, y, r * .35, z + r * 18, z + r * 21, 'leaf', .02)];
 const candle = (x, y, z, h = 10, w = .045) => [C(x, y, w, z, z + h, 'wax'), C(x, y, w * .6, z + h, z + h + 3, 'flame', .01)];
 const rows = (n, f) => Array.from({ length: n }, (_, i) => f(i)).flat();
 // A turned stem: base, knops, a cup on top.
@@ -187,12 +202,40 @@ export const PROPS = {
   font: { fp: [2, 2], shapes: [C(1, 1, .3, 0, 3, 'stone', .26), C(1, 1, .18, 3, 14, 'pale', .22), C(1, 1, .7, 14, 26, 'pale', .76), C(1, 1, .62, 25, 26.5, 'water')] },
   pedestal: { fp: [1, 1], shapes: [[.15, .15, 0, .85, .85, 4, 'stone'], [.22, .22, 4, .78, .78, 24, 'pale'], [.15, .15, 24, .85, .85, 28, 'stone']], statue: 28 },
   // The garden: a cypress, a bush, a stone bench, a low wall.
-  cypress: { fp: [1, 1], shapes: [C(.5, .5, .06, 0, 10, 'bark'), C(.5, .5, .3, 10, 42, 'leaf', .34), C(.5, .5, .34, 42, 74, 'leaf', .24), C(.5, .5, .24, 74, 98, 'leaf', .04)] },
-  bush: { fp: [1, 1], shapes: [C(.45, .5, .32, 0, 12, 'leaf', .3), C(.58, .45, .22, 8, 18, 'leaf', .1), C(.36, .58, .18, 6, 15, 'leaf', .08)] },
+  // a broad shade tree (two cells square) and a bed of flowers
+  // a slender birch with a white trunk, a weeping willow, a tall columnar poplar
+  // a tall pine in tiers (three cells square) and a great spreading oak (four cells square)
   parapet: { fp: [1, 1], shapes: [[0, .3, 0, 1, .7, 3, 'stone'], ...[.25, .75].map(x => C(x, .5, .09, 3, 13, 'pale', .07)), [0, .25, 13, 1, .75, 17, 'pale']] },
   stonebench: { fp: [2, 1], shapes: [[.2, .3, 0, .4, .7, 9, 'stone'], [1.6, .3, 0, 1.8, .7, 9, 'stone'], [.1, .25, 9, 1.9, .75, 12, 'pale']] },
   vase: { fp: [1, 1], shapes: [C(.5, .5, .1, 0, 3, 'bronze', .14), C(.5, .5, .15, 3, 12, 'bronze', .1), C(.5, .5, .12, 12, 14, 'bronze', .16), C(.5, .5, .2, 14, 24, 'leaf', .14), C(.45, .45, .05, 24, 29, 'linen', .03)] },
   grate: { fp: [2, 2], shapes: [[.1, .1, 0, 1.9, 1.9, 2, 'iron'], ...rows(6, i => [[.2 + i * .28, .1, 2, .28 + i * .28, 1.9, 4, 'iron']])] },
+  // The trees and plants of the grounds (painted in src/flora.js): each stands on one cell, its trunk the only thing in
+  // the way; the low plants are in nobody's way.
+  oak: { fp: [1, 1], flora: true, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  bigoak: { fp: [1, 1], flora: true, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  ancient: { fp: [1, 1], flora: true, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  irregular: { fp: [1, 1], flora: true, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  lowbranch: { fp: [1, 1], flora: true, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  pinesm: { fp: [1, 1], flora: true, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  pine: { fp: [1, 1], flora: true, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  cypress: { fp: [1, 1], flora: true, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  dead: { fp: [1, 1], flora: true, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  willow: { fp: [1, 1], flora: true, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  twisted: { fp: [1, 1], flora: true, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  roses: { fp: [1, 1], flora: true, solid: false, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  // a clipped hedge, the whole cell, so a row of them reads as one hedge (no outline between them)
+  hedge: { fp: [1, 1], seamless: true, shapes: [[0, 0, 0, 1, 1, 15, 'hedgeleaf'], [.04, .04, 15, .96, .96, 17, 'hedgeleaf']] },
+  flowerbed: { fp: [1, 1], flora: true, solid: false, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  bushs: { fp: [1, 1], flora: true, solid: false, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  bushm: { fp: [1, 1], flora: true, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  bushl: { fp: [1, 1], flora: true, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  scrub: { fp: [1, 1], flora: true, solid: false, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  wildplant: { fp: [1, 1], flora: true, solid: false, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  wildflowers: { fp: [1, 1], flora: true, solid: false, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  ornamental: { fp: [1, 1], flora: true, solid: false, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  mossrock: { fp: [1, 1], flora: true, shapes: [[.4, .4, 0, .6, .6, 1, 'bark']] },
+  // A stone cross on a stepped base (the graveyard's)
+  stonecross: { fp: [1, 1], shapes: [[.2, .2, 0, .8, .8, 4, 'stone'], [.3, .3, 4, .7, .7, 8, 'pale'], [.43, .43, 8, .57, .57, 44, 'pale'], [.43, .2, 30, .57, .8, 36, 'pale']] },
   // Outside: an iron lamppost, a banner on a pole, an iron railing, the courtyard's fountain.
   lamppost: { fp: [1, 1], shapes: [C(.5, .5, .16, 0, 5, 'stone', .12), C(.5, .5, .045, 5, 70, 'iron'), C(.5, .5, .09, 30, 33, 'iron'),
     C(.5, .5, .15, 70, 72, 'iron', .12), C(.5, .5, .12, 72, 84, 'lantern', .14), C(.5, .5, .17, 84, 87, 'iron', .1), C(.5, .5, .06, 87, 92, 'iron', .01)],
@@ -319,7 +362,7 @@ export function renderShapes(shapes, H, opt = {}) {
 export function propCell(type, rot, ci, cj, seed, statue, open = false) {
   const { shapes } = turned(type, rot), H = propHeight(type);
   const local = shapes.map(s => s[0] === 'C' ? ['C', s[1] - ci, s[2] - cj, ...s.slice(3)] : [s[0] - ci, s[1] - cj, s[2], s[3] - ci, s[4] - cj, s[5], s[6]]);
-  const c = renderShapes(local, H, { open, seed, outline: local });
+  const c = renderShapes(local, H, { open, seed, outline: PROPS[type].seamless ? false : local });
   if (statue && PROPS[type].statue) c.getContext('2d').drawImage(statue, 0, 0, statue.width, statue.height, Math.round(20 - statue.width / 2), Math.round(H - PROPS[type].statue * ZS + GY - 1 - statue.height + 2), statue.width, statue.height);
   return { canvas: c, h: H };
 }
