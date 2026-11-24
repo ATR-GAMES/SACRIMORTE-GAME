@@ -10,7 +10,7 @@
 // A thing several cells wide is drawn cell by cell (each cell a sprite sorted with the characters).
 // Rotation: 0 as defined (the front looks south, +y), 1 front west, 2 front north, 3 front east.
 
-import { GY, DH, ZS, thinUp } from './view.js?v=f76c404';
+import { GY, DH, ZS, thinUp } from './view.js?v=7b25778';
 
 const clamp8 = v => v < 0 ? 0 : v > 255 ? 255 : v | 0;
 const hash = (a, b, c = 0) => { let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(c | 0, 1440662683); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };

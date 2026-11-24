@@ -6,7 +6,7 @@
 // to the street.
 // One cell is about a metre. x runs west → east, y north → south. Floors stand at levels (one step = STEP_PX on
 // screen): the street at 0, the church and terrace at 2, the dais at 5, the library and organ loft upstairs at 8.
-import { footprint } from './props.js?v=f76c404';
+import { footprint } from './props.js?v=7b25778';
 
 export const CELL = 20 * Math.SQRT2;            // world units per cell
 export const NAME = 'Catedral de Nuestra Señora de las Ánimas';

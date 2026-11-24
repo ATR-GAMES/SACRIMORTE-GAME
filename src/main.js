@@ -1,18 +1,18 @@
 // The priest in the Cathedral of Our Lady of the Souls (src/cathedral.js), against the demon's ten, with health, stamina, five weapons, the
 // roll, prayer and the crucifix, and a great deal of blood. Plus a gallery of every animation in all eight facings.
-import { ANIMS, bake, animsFor, animInfo, OX, OY, CINE, bakeCine } from './priest.js?v=f76c404';
-import { WEAPONS, WEAPON_IDS } from './weapons.js?v=f76c404';
-import { toScreen } from './raster.js?v=f76c404';
-import { ENEMIES, ENEMY_IDS, ENEMY_ANIMS, bakeEnemy, bakeFaithful, bakeDemon, DEMON } from './enemies.js?v=f76c404';
-import { createIntro } from './intro.js?v=f76c404';
-import { Sheet, loadPacked } from './atlas.js?v=f76c404';
-import { initTouch } from './touch.js?v=f76c404';
-import { MOBILE, PERF } from './device.js?v=f76c404';
-import * as SFX from './sfx.js?v=f76c404';
-import { K as GK, V as GV } from './view.js?v=f76c404';
-import { build as buildCathedral } from './cathedral.js?v=f76c404';
-import { makeWorld } from './world.js?v=f76c404';
-import { createMap } from './map.js?v=f76c404';
+import { ANIMS, bake, animsFor, animInfo, OX, OY, CINE, bakeCine } from './priest.js?v=7b25778';
+import { WEAPONS, WEAPON_IDS } from './weapons.js?v=7b25778';
+import { toScreen } from './raster.js?v=7b25778';
+import { ENEMIES, ENEMY_IDS, ENEMY_ANIMS, bakeEnemy, bakeFaithful, bakeDemon, DEMON } from './enemies.js?v=7b25778';
+import { createIntro } from './intro.js?v=7b25778';
+import { Sheet, loadPacked } from './atlas.js?v=7b25778';
+import { initTouch } from './touch.js?v=7b25778';
+import { MOBILE, PERF } from './device.js?v=7b25778';
+import * as SFX from './sfx.js?v=7b25778';
+import { K as GK, V as GV } from './view.js?v=7b25778';
+import { build as buildCathedral } from './cathedral.js?v=7b25778';
+import { makeWorld } from './world.js?v=7b25778';
+import { createMap } from './map.js?v=7b25778';
 
 // The map, and what draws it and keeps everyone out of its walls.
 // Statues are the game's own figures carved in pale stone: a saint holding up the cross, a hooded virgin, a kneeling monk.
@@ -645,7 +645,11 @@ let gallery = false, gIdx = 0, gT = 0, gWid = '', gWho = 0;
 // The usual scale: close in, the way Diablo's camera sits over its hero. The cinematic's wide shots pull back to the hall.
 let wideShot = false;
 // (on a phone one CSS pixel a game pixel: a phone's screen is small, so the world is drawn at its finest, not doubled)
-const baseScale = () => MOBILE ? 1 : Math.max(2, Math.floor(Math.min(innerWidth / 680, innerHeight / 380)));
+// The design view (from the pause menu): the camera far back, the whole church and its grounds in view, as when the
+// map was being laid out. Remembered across reloads.
+let designView = (() => { try { return localStorage.getItem('sacri-vista') === 'diseno'; } catch { return false; } })();
+const baseScale = () => designView ? Math.max(.3125, Math.floor(Math.min(innerWidth / 680, innerHeight / 380)) * .15625)
+  : MOBILE ? 1 : Math.max(2, Math.floor(Math.min(innerWidth / 680, innerHeight / 380)));
 function resize() {
   const W = innerWidth, H = innerHeight;
   // The cinematic's wide shots pull back to half the scale: a whole number, so every pixel stays a clean square.
@@ -800,7 +804,7 @@ let paused = false, pSel = 0, pPage = 'main';
 const P_ITEMS = [['Continuar', () => setPause(false)], ['Controles', () => { pPage = 'keys'; renderPause(); }],
   ['Invocar enemigo', () => { const id = ENEMY_IDS[spawnIdx % ENEMY_IDS.length]; spawnIdx++; wantE = id; pendingSpawn.push(id); setPause(false); }],
   ['Horda de seis', () => { for (let i = 0; i < 6; i++) pendingSpawn.push(ENEMY_IDS[Math.random() * ENEMY_IDS.length | 0]); setPause(false); }],
-  ['Reiniciar combate', () => { restart(); setPause(false); }], [() => 'Sonido: ' + SFX.label(), () => { SFX.cycle(); renderPause(); }], ['Galería', () => { setPause(false); gallery = true; gT = 0; gWid = pl.wid; resize(); hud.style.opacity = 1; }]];
+  ['Reiniciar combate', () => { restart(); setPause(false); }], [() => 'Sonido: ' + SFX.label(), () => { SFX.cycle(); renderPause(); }], [() => 'Vista: ' + (designView ? 'diseño' : 'juego'), () => { designView = !designView; try { localStorage.setItem('sacri-vista', designView ? 'diseno' : 'juego'); } catch {} resize(); renderPause(); }], ['Galería', () => { setPause(false); gallery = true; gT = 0; gWid = pl.wid; resize(); hud.style.opacity = 1; }]];
 const P_KEYS = [['WASD / flechas', 'caminar'], ['Shift', 'correr'], ['Q', 'rodar (esquiva, invulnerable)'], ['Espacio', 'saltar'], ['C', 'agacharse / levantarse'],
   ['1 – 5 · 0', 'puñal, machete, hacha, candelabro, horca · sin arma'], ['Clic', 'golpe (clic otra vez encadena 1 → 2 → 3)'], ['J / K / L', 'golpe 1 / 2 / 3'],
   ['R', 'rezar: cura, pero te deja expuesto'], ['F (mantener)', 'crucifijo: repele, y quema a los demoníacos'], ['E', 'interactuar'],

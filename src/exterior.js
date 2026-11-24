@@ -5,7 +5,7 @@
 // Anything above the eaves seen at the same pixel as anything below them is always the nearer of the two, so the one
 // big sprite is simply drawn last, over the rest.
 // Coordinates: x, y in cells as the cathedral is laid out (src/cathedral.js), z in pixels of height on screen.
-import { GY } from './view.js?v=f76c404';
+import { GY } from './view.js?v=7b25778';
 
 const hash = (a, b, c = 0) => { let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(c | 0, 1440662683); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
 const WG = [[150, 70, 210], [190, 86, 210], [118, 60, 190], [226, 80, 108], [250, 190, 90], [86, 104, 216]];

@@ -10,11 +10,11 @@
 // - collision: circles against the solid cells.
 // Screen space here is the map's own (no camera): corner (i, j) of a cell sits at (20(i−j), GY(i+j)) — see src/view.js.
 // Interior walls in front of the room the priest is in are cut down to a stub, the way Diablo shows a room.
-import { CELL, F, B, OUTDOOR } from './cathedral.js?v=f76c404';
-import { PROPS, propCell, propLights, propFlames, renderShapes, footprint, propHeight } from './props.js?v=f76c404';
-import { buildExterior } from './exterior.js?v=f76c404';
-import { floraArt } from './flora.js?v=f76c404';
-import { GY, DH, V, ZS, STEP_PX, toScreen, fadeUp, thinUp } from './view.js?v=f76c404';
+import { CELL, F, B, OUTDOOR } from './cathedral.js?v=7b25778';
+import { PROPS, propCell, propLights, propFlames, renderShapes, footprint, propHeight } from './props.js?v=7b25778';
+import { buildExterior } from './exterior.js?v=7b25778';
+import { floraArt } from './flora.js?v=7b25778';
+import { GY, DH, V, ZS, STEP_PX, toScreen, fadeUp, thinUp } from './view.js?v=7b25778';
 
 const CS = 256;
 const hash = (a, b, c = 0) => { let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(c | 0, 1440662683); h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };

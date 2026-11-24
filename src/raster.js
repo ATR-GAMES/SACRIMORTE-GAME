@@ -4,7 +4,7 @@
 // artist would: coloured outline (sel-out), inner contour lines where a limb crosses the body, stray-pixel cleanup
 // and hand-placed decals (eyes, buttons, embroidery) that would be lost at this size if they were sampled.
 
-import { K, V, toScreen } from './view.js?v=f76c404';
+import { K, V, toScreen } from './view.js?v=7b25778';
 // The camera (its angle lives in src/view.js). World: x to screen down-right, y to screen down-left, z up.
 const S2 = Math.SQRT1_2, C30 = V, S30 = K;
 export const CAM = { r: [S2, -S2, 0], u: [-S30 * S2, -S30 * S2, C30], t: [C30 * S2, C30 * S2, S30] };
